@@ -1,5 +1,5 @@
-import { Job } from '../models/Job';
-import { Applicant } from '../models/Applicant';
+import { Job, IJob } from '../models/Job';
+import { Applicant, IApplicant } from '../models/Applicant';
 import { ScreeningSession, IScreeningSession } from '../models/ScreeningSession';
 import { ScreeningResult, IScreeningResult } from '../models/ScreeningResult';
 import { geminiService, CandidateEvaluation } from './gemini.service';
@@ -55,8 +55,8 @@ export class ScreeningService {
 
   private async processScreening(
     sessionId: string,
-    job: any,
-    applicants: any[],
+    job: IJob,
+    applicants: IApplicant[],
     options: ScreeningOptions
   ): Promise<void> {
     try {

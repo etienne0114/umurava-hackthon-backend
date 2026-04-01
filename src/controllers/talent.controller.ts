@@ -118,18 +118,18 @@ export class TalentController {
         .sort({ createdAt: -1 })
         .limit(5);
 
-      // Map user to a temporary Applicant structure for evaluation
-      const tempApplicant: any = {
+      // Map user to a structured applicant temporary object for objective AI evaluation
+      const tempApplicant = {
         _id: userId,
         profile: {
           name: user.profile.name,
           email: user.email,
           skills: user.profile.skills || [],
-          experience: [], // In a real app, populate from user profile
-          education: [],
-          summary: user.profile.bio,
+          experience: user.profile.experience || [],
+          education: user.profile.education || [],
+          summary: user.profile.bio || '',
         }
-      };
+      } as any;
 
       // Evaluate each job in parallel using Gemini
       const recommendations = await Promise.all(
@@ -252,9 +252,9 @@ export class TalentController {
       const fileName = req.file.originalname;
       const fileType = fileService.detectFileType(fileName) || 'pdf';
 
-      // Step 1: Extract raw text from the file
-      // For PDFs, parsePDF stores the raw extracted text in .rawText — use that directly.
-      // This avoids the garbled "Experience at See resume" placeholder reconstruction.
+      // Step 1: Extract and normalize text from the uploaded file
+      // We prioritize raw text extraction to preserve section headers and context
+      // which allows the AI engine to perform high-fidelity parsing.
       let cvText = '';
       try {
         const parsed = await fileService.parseFile(buffer, fileType, fileName);

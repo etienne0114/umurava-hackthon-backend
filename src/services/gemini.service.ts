@@ -34,6 +34,7 @@ export interface ParsedResumeProfile {
   bio: string;
   phone: string;
   skills: string[];
+  languages: string[];
   experience: Array<{ title: string; company: string; duration: string; description?: string }>;
   education: Array<{ degree: string; institution: string; year: string }>;
 }
@@ -129,7 +130,8 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
       "year": "Graduation Year"
     }
   ],
-  "phone": "phone number if present or empty string"
+  "phone": "phone number if present or empty string",
+  "languages": ["Language 1 (Level)", "Language 2"]
 }
 
 Rules:
@@ -161,6 +163,7 @@ ${cvText.slice(0, 8000)}
             bio: parsed.bio || '',
             phone: parsed.phone || '',
             skills: Array.isArray(parsed.skills) ? parsed.skills.filter(Boolean) : [],
+            languages: Array.isArray(parsed.languages) ? parsed.languages.filter(Boolean) : [],
             experience: Array.isArray(parsed.experience) ? parsed.experience.slice(0, 5) : [],
             education: Array.isArray(parsed.education) ? parsed.education.slice(0, 3) : [],
           };
