@@ -2,6 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service';
 import { APIError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import path from 'path';
+import fs from 'fs';
+import { config } from '../config/environment';
+import logger from '../utils/logger';
 
 export class AuthController {
   async register(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -119,6 +123,56 @@ export class AuthController {
           profile: user.profile,
         },
         message: 'Profile updated successfully',
+      });
+    } catch (error: any) {
+      next(error);
+    }
+  }
+
+  async uploadAvatar(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      logger.info(`Received avatar upload request for user ${req.user?.userId}`);
+      
+      if (!req.user || !req.file) {
+        logger.warn('Avatar upload failed: User not authenticated or no file provided');
+        const error: APIError = new Error('User not authenticated or no file provided');
+        error.statusCode = 400;
+        error.code = 'BAD_REQUEST';
+        throw error;
+      }
+
+      const userId = req.user.userId;
+      const file = req.file;
+      const extension = path.extname(file.originalname) || '.png';
+      const fileName = `avatar-${userId}-${Date.now()}${extension}`;
+      const avatarDir = path.join(config.uploadDir, 'avatars');
+      const filePath = path.join(avatarDir, fileName);
+
+      // Ensure directory exists
+      if (!fs.existsSync(avatarDir)) {
+        fs.mkdirSync(avatarDir, { recursive: true });
+      }
+
+      // Save file
+      logger.info(`Saving avatar for user ${userId} to ${filePath}`);
+      fs.writeFileSync(filePath, file.buffer);
+
+      // Update user profile with relative URL
+      const avatarUrl = `/uploads/avatars/${fileName}`;
+      const user = await authService.updateProfile(userId, { avatar: avatarUrl });
+      
+      logger.info(`Avatar uploaded and profile updated for user ${userId}: ${avatarUrl}`);
+
+      res.json({
+        success: true,
+        data: {
+          avatarUrl,
+          user: {
+            id: user._id,
+            profile: user.profile,
+          }
+        },
+        message: 'Avatar uploaded successfully',
       });
     } catch (error: any) {
       next(error);

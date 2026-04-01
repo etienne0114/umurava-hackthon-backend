@@ -106,6 +106,18 @@ export class ScreeningService {
 
       await Job.findByIdAndUpdate(job._id, { screeningStatus: 'completed' });
 
+      // Notify the recruiter
+      const { NotificationController } = await import('../controllers/notification.controller');
+      if (job.createdBy) {
+        await NotificationController.create(
+          job.createdBy,
+          'success',
+          'Screening Completed',
+          `AI screening for "${job.title}" has finished. ${screeningResults.length} candidates were ranked.`,
+          `/company/screening?jobId=${job._id}`
+        );
+      }
+
       logger.info(`Screening completed for session ${sessionId}`);
     } catch (error: any) {
       await ScreeningSession.findByIdAndUpdate(sessionId, {
