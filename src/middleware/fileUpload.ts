@@ -1,6 +1,5 @@
 import multer from 'multer';
 import { Request } from 'express';
-import fileType from 'file-type';
 import { config } from '../config/environment';
 import logger from '../utils/logger';
 
@@ -14,55 +13,50 @@ const ALLOWED_FILE_SIGNATURES: Record<string, string[]> = {
   xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
   xls: ['application/vnd.ms-excel'],
   pdf: ['application/pdf'],
+  jpeg: ['image/jpeg'],
+  jpg: ['image/jpeg'],
+  png: ['image/png'],
 };
 
 /**
- * Validate file type using magic numbers (file signature)
- * This is more secure than relying on MIME type or file extension
+ * Verifies that the file content matches its extension using magic numbers.
  */
 export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean; type?: string; error?: string }> => {
   try {
-    // Check for CSV (plain text files don't have magic numbers)
+    // 1. Check for binary magic numbers (images, PDF, Excel) FIRST
+    // Using require for absolute robustness in this Node/TS environment
+    const FileType = require('file-type');
+    const detectedType = await FileType.fromBuffer(buffer);
+
+    if (detectedType) {
+      logger.info(`Detected binary magic number: ${detectedType.mime}`);
+      // Validate against allowed binary types
+      const allowedMimes = Object.values(ALLOWED_FILE_SIGNATURES).flat();
+      if (!allowedMimes.includes(detectedType.mime)) {
+        return { 
+          valid: false, 
+          error: `File type ${detectedType.mime} is not allowed. Only CSV, Excel, PDF, and image files (JPEG, PNG) are accepted.` 
+        };
+      }
+      return { valid: true, type: detectedType.mime };
+    }
+
+    // 2. ONLY if no binary magic numbers are found, check for plain-text CSV
     const text = buffer.toString('utf8', 0, Math.min(1000, buffer.length));
-    if (text.includes(',') && (text.includes('\n') || text.includes('\r'))) {
-      // Basic CSV validation - contains commas and line breaks
+    
+    // Check if it's reasonably looking like text (mostly printable characters)
+    const isPrintable = /^[\x20-\x7E\r\n\t]*$/.test(text);
+    
+    if (isPrintable && text.includes(',') && (text.includes('\n') || text.includes('\r'))) {
+      logger.info('Detected plain-text CSV format');
       return { valid: true, type: 'csv' };
     }
 
-    // Check magic numbers for binary files
-    const detectedType = await fileType.fromBuffer(buffer);
-    
-    if (!detectedType) {
-      return { valid: false, error: 'Unable to determine file type' };
-    }
-
-    // Validate against allowed types
-    const allowedMimes = Object.values(ALLOWED_FILE_SIGNATURES).flat();
-    if (!allowedMimes.includes(detectedType.mime)) {
-      return { 
-        valid: false, 
-        error: `File type ${detectedType.mime} is not allowed. Only CSV, Excel, and PDF files are accepted.` 
-      };
-    }
-
-    // Additional validation for specific types
-    if (detectedType.mime === 'application/pdf') {
-      // PDF files should start with %PDF
-      const header = buffer.toString('utf8', 0, 4);
-      if (!header.startsWith('%PDF')) {
-        return { valid: false, error: 'Invalid PDF file structure' };
-      }
-    }
-
-    if (detectedType.mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-      // XLSX files are ZIP archives with specific structure
-      const header = buffer.toString('hex', 0, 4);
-      if (header !== '504b0304') { // PK.. (ZIP signature)
-        return { valid: false, error: 'Invalid Excel file structure' };
-      }
-    }
-
-    return { valid: true, type: detectedType.ext };
+    logger.warn('File type detection failed after binary and text checks');
+    return { 
+      valid: false, 
+      error: 'Unable to reliably determine file type. Please upload a standard CSV or image file.' 
+    };
   } catch (error) {
     logger.error('File type validation error:', error);
     return { valid: false, error: 'File validation failed' };
@@ -86,12 +80,15 @@ export const upload = multer({
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only CSV, Excel, and PDF files are allowed.'));
+      cb(new Error('Invalid file type. Only CSV, Excel, PDF, and image files (JPEG, PNG) are allowed.'));
     }
   },
 });

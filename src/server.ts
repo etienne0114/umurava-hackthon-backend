@@ -1,5 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
+import path from 'path';
 import { config, validateConfig } from './config/environment';
 import { connectDatabase } from './config/database';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -37,11 +38,30 @@ app.use(requestSizeLimiter);
 // General rate limiting for all API routes
 app.use('/api/', generalLimiter);
 
+// Serve static uploads BEFORE any other API routes to ensure they aren't intercepted
+// Mount directly under /api/uploads to match the frontend expectations
+// Serve static assets with absolute reliability using __dirname
+const uploadsPath = path.resolve(__dirname, '..', 'uploads');
+app.use('/api/uploads', express.static(uploadsPath));
+app.use('/uploads', express.static(uploadsPath));
+
+// Manual fallback route for absolute certainty
+app.get('/api/uploads/:type/:file', (req, res) => {
+  const filePath = path.join(uploadsPath, req.params.type, req.params.file);
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      logger.error(`Asset fetch failed at ${filePath}: ${err.message}`);
+      res.status(404).json({ error: 'Asset not found' });
+    }
+  });
+});
+
 // Body parsing middleware with size limits
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Input sanitization middleware
+app.use(sanitizeRequest); // NoSQL injection prevention
 app.use(sanitizeRequest); // NoSQL injection prevention
 app.use(sanitizeBody); // XSS prevention
 
@@ -69,6 +89,8 @@ import jobRoutes from './routes/job.routes';
 import applicantRoutes from './routes/applicant.routes';
 import screeningRoutes from './routes/screening.routes';
 import talentRoutes from './routes/talent.routes';
+import searchRoutes from './routes/search.routes';
+import notificationRoutes from './routes/notification.routes';
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -76,6 +98,8 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/applicants', applicantRoutes);
 app.use('/api/screening', screeningRoutes);
 app.use('/api/talent', talentRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error handling
 app.use(notFoundHandler);

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
 
@@ -12,7 +13,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'default-secret-change-in-production',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10),
-  uploadDir: process.env.UPLOAD_DIR || './uploads',
+  uploadDir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'),
   logLevel: process.env.LOG_LEVEL || 'info',
 };
 
