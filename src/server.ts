@@ -92,6 +92,7 @@ import talentRoutes from './routes/talent.routes';
 import searchRoutes from './routes/search.routes';
 import notificationRoutes from './routes/notification.routes';
 import companyRoutes from './routes/company.routes';
+import assessmentRoutes from './routes/assessment.routes';
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -102,6 +103,7 @@ app.use('/api/talent', talentRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/company', companyRoutes);
+app.use('/api/assessments', assessmentRoutes);
 
 // Error handling
 app.use(notFoundHandler);

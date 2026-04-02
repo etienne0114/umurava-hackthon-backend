@@ -209,6 +209,48 @@ ${cvText.slice(0, 8000)}
 
     return evaluations;
   }
+
+  async generateTechnicalTest(job: IJob, applicant: IApplicant): Promise<Array<{ question: string; expectedAnswer: string }>> {
+    try {
+      return await geminiRateLimiter.execute(async () => {
+        return await retryWithBackoff(async () => {
+          const prompt = `You are a world-class technical interviewer for a ${job.title} position. 
+You are interviewing a candidate named ${applicant.profile.name} who highlights these skills: ${applicant.profile.skills.join(', ')}.
+
+Your goal is to generate 5 to 10 highly specific technical screening questions to VALIDATE if their real-world experience matches the skills they've claimed.
+
+JOB DESCRIPTION:
+${job.description}
+
+CANDIDATE SUMMARY:
+${applicant.profile.summary || 'Not provided'}
+
+Instructions:
+1. Generate between 5 and 10 questions.
+2. Each question should be practical and designed to test deep knowledge, not just definitions.
+3. Tailor questions to the intersection of the candidate's skills and the specific requirements of the job.
+4. Include a brief "expectedAnswer" for each question to help the recruiter evaluate the response.
+
+Return ONLY a JSON array of objects with this structure (no markdown, no extra text):
+[
+  { "question": "The technical question here", "expectedAnswer": "Brief description of what a good answer should include" }
+]`;
+
+          const result = await this.model.generateContent(prompt);
+          const response = await result.response;
+          const text = response.text().trim();
+
+          const jsonMatch = text.match(/\[[\s\S]*\]/);
+          if (!jsonMatch) throw new Error('No valid JSON array found in Gemini response');
+
+          return JSON.parse(jsonMatch[0]);
+        }, 3, 1000);
+      });
+    } catch (error: any) {
+      logger.error('Error generating technical test with Gemini:', error);
+      throw new Error(`Technical test generation failed: ${error.message}`);
+    }
+  }
 }
 
 export const geminiService = new GeminiService();
