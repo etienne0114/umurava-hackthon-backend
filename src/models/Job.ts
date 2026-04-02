@@ -49,11 +49,11 @@ const JobSchema = new Schema<IJob>(
     },
     requirements: {
       skills: {
-        type: [String],
+        type: String,
         required: [true, 'At least one skill is required'],
         validate: {
-          validator: (v: string[]) => v.length > 0,
-          message: 'Skills array cannot be empty',
+          validator: (v: string) => v.trim().length > 0,
+          message: 'Skills description cannot be empty',
         },
       },
       experience: {

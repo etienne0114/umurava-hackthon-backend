@@ -19,7 +19,7 @@ export interface EducationEntry {
 }
 
 export interface JobRequirements {
-  skills: string[];
+  skills: string;
   experience: {
     minYears: number;
     maxYears?: number;

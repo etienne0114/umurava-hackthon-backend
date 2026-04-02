@@ -32,7 +32,7 @@ export class SearchController {
           $or: [
             { title: { $regex: searchQuery, $options: 'i' } },
             { description: { $regex: searchQuery, $options: 'i' } },
-            { 'requirements.skills': { $in: [new RegExp(searchQuery, 'i')] } },
+            { 'requirements.skills': { $regex: searchQuery, $options: 'i' } },
           ],
         })
           .sort({ createdAt: -1 })

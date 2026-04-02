@@ -35,7 +35,7 @@ export const buildEvaluationPrompt = (job: IJob, applicant: IApplicant): string 
 - Employment Type: ${job.employmentType || 'Full-time'}
 - Work Mode: ${job.workMode || 'Remote'}
 - Description: ${job.description}
-- Required Skills: ${job.requirements.skills.join(', ')}
+- Required Skills: ${job.requirements.skills}
 - Experience Required: ${experienceRange} years
 - Education Required: ${job.requirements.education.join(', ') || 'Not specified'}
 
