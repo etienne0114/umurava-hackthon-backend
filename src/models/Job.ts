@@ -15,7 +15,7 @@ export interface IJob extends Document {
   status: JobStatus;
   applicantCount: number;
   screeningStatus?: ScreeningStatus;
-  createdBy?: string;
+  createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -117,7 +117,10 @@ const JobSchema = new Schema<IJob>(
       type: String,
       enum: ['not_started', 'in_progress', 'completed'],
     },
-    createdBy: String,
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
   },
   { timestamps: true }
 );

@@ -1,4 +1,5 @@
 import { Job, IJob } from '../models/Job';
+import { Application } from '../models/Application';
 import { JobRequirements, WeightConfig, JobStatus } from '../types';
 import logger from '../utils/logger';
 
@@ -45,7 +46,16 @@ export class JobService {
 
   async getJobById(jobId: string): Promise<IJob | null> {
     try {
-      return await Job.findById(jobId);
+      const job = await Job.findById(jobId).populate('createdBy', 'profile.company');
+      if (job) {
+        // Fetch real applicant count from Application model
+        job.applicantCount = await Application.countDocuments({ jobId: job._id });
+        
+        if (!job.company && (job.createdBy as any)?.profile?.company) {
+          job.company = (job.createdBy as any).profile.company;
+        }
+      }
+      return job;
     } catch (error: any) {
       logger.error(`Error fetching job ${jobId}:`, error);
       throw error;
@@ -62,9 +72,25 @@ export class JobService {
       const offset = filters.offset || 0;
 
       const [jobs, total] = await Promise.all([
-        Job.find(query).sort({ createdAt: -1 }).limit(limit).skip(offset),
+        Job.find(query)
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .skip(offset)
+          .populate('createdBy', 'profile.company'),
         Job.countDocuments(query),
       ]);
+
+      // Ensure each job has a real company name and real applicant count
+      await Promise.all(
+        jobs.map(async (job) => {
+          // Real-time applicant counting
+          job.applicantCount = await Application.countDocuments({ jobId: job._id });
+
+          if (!job.company && (job.createdBy as any)?.profile?.company) {
+            job.company = (job.createdBy as any).profile.company;
+          }
+        })
+      );
 
       return { jobs, total };
     } catch (error: any) {
