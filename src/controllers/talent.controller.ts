@@ -5,6 +5,7 @@ import { Job } from '../models/Job';
 import { User } from '../models/User';
 import { Notification } from '../models/Notification';
 import { SavedJob } from '../models/SavedJob';
+import { Applicant } from '../models/Applicant';
 import { geminiService } from '../services/gemini.service';
 import { fileService } from '../services/file.service';
 import { parseResumeText } from '../utils/resumeTextParser';
@@ -261,7 +262,34 @@ export class TalentController {
         });
       }
 
-      logger.info(`Talent ${userId} applied to job ${jobId}`);
+      // Sync profile to Applicant collection for AI Screening view
+      // This ensures the recruiter sees the applicant in their screening list
+      const applicantUser = await User.findById(userId);
+      if (applicantUser) {
+        await Applicant.findOneAndUpdate(
+          { jobId, 'profile.email': applicantUser.email },
+          {
+            jobId,
+            source: 'umurava',
+            sourceId: userId,
+            profile: {
+              name: applicantUser.profile.name,
+              email: applicantUser.email,
+              phone: applicantUser.profile.phone,
+              skills: applicantUser.profile.skills,
+              experience: applicantUser.profile.experience,
+              education: applicantUser.profile.education,
+              summary: applicantUser.profile.bio,
+            },
+            metadata: {
+              uploadedAt: new Date(),
+            }
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      logger.info(`Talent ${userId} applied to job ${jobId} and synced to Applicant collection`);
 
       res.status(201).json({
         success: true,

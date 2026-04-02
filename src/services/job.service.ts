@@ -1,5 +1,5 @@
 import { Job, IJob } from '../models/Job';
-import { Application } from '../models/Application';
+import { Applicant } from '../models/Applicant';
 import { JobRequirements, WeightConfig, JobStatus } from '../types';
 import logger from '../utils/logger';
 
@@ -48,8 +48,8 @@ export class JobService {
     try {
       const job = await Job.findById(jobId).populate('createdBy', 'profile.company');
       if (job) {
-        // Fetch real applicant count from Application model
-        job.applicantCount = await Application.countDocuments({ jobId: job._id });
+        // Fetch real applicant count from Applicant model
+        job.applicantCount = await Applicant.countDocuments({ jobId: job._id });
         
         if (!job.company && (job.createdBy as any)?.profile?.company) {
           job.company = (job.createdBy as any).profile.company;
@@ -84,7 +84,7 @@ export class JobService {
       await Promise.all(
         jobs.map(async (job) => {
           // Real-time applicant counting
-          job.applicantCount = await Application.countDocuments({ jobId: job._id });
+          job.applicantCount = await Applicant.countDocuments({ jobId: job._id });
 
           if (!job.company && (job.createdBy as any)?.profile?.company) {
             job.company = (job.createdBy as any).profile.company;
