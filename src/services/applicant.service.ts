@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Applicant, IApplicant } from '../models/Applicant';
 import { Job } from '../models/Job';
+import { Application } from '../models/Application';
 import { fileService, FileType } from './file.service';
 import { umuravaService } from './umurava.service';
 import logger from '../utils/logger';
@@ -202,6 +203,40 @@ export class ApplicantService {
       return true;
     } catch (error: any) {
       logger.error(`Error deleting applicant ${applicantId}:`, error);
+      throw error;
+    }
+  }
+
+  async updateStatus(applicantId: string, status: string): Promise<IApplicant | null> {
+    try {
+      const applicant = await Applicant.findByIdAndUpdate(
+        applicantId,
+        { status },
+        { new: true, runValidators: true }
+      );
+
+      if (!applicant) {
+        throw new Error('Applicant not found');
+      }
+
+      // Sync status with Application if it's from Umurava
+      if (applicant.source === 'umurava' && applicant.sourceId) {
+        try {
+          await Application.findOneAndUpdate(
+            { userId: applicant.sourceId, jobId: applicant.jobId },
+            { status }
+          );
+          logger.info(`Synchronized status ${status} for Application ${applicant.sourceId}`);
+        } catch (syncError) {
+          logger.warn(`Failed to sync status for Umurava application: ${syncError}`);
+          // We don't throw here to ensure the main applicant update succeeds
+        }
+      }
+
+      logger.info(`Applicant ${applicantId} status updated to ${status}`);
+      return applicant;
+    } catch (error: any) {
+      logger.error(`Error updating status for applicant ${applicantId}:`, error);
       throw error;
     }
   }

@@ -170,6 +170,31 @@ export class ApplicantController {
       next(error);
     }
   }
+
+  async updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { applicantId } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        const error: APIError = new Error('Status is required');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const applicant = await applicantService.updateStatus(applicantId, status);
+
+      res.json({
+        success: true,
+        data: applicant,
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      next(error);
+    }
+  }
 }
 
 export const applicantController = new ApplicantController();

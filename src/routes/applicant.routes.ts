@@ -35,4 +35,6 @@ router.put('/:applicantId', authorize('company'), applicantController.updateAppl
 
 router.delete('/:applicantId', authorize('company'), applicantController.deleteApplicant.bind(applicantController));
 
+router.patch('/:applicantId/status', authorize('company'), applicantController.updateStatus.bind(applicantController));
+
 export default router;

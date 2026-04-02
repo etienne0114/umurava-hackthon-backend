@@ -19,6 +19,8 @@ export interface IApplicant extends Document {
     fileName?: string;
     uploadedAt?: Date;
   };
+  status: 'pending' | 'shortlisted' | 'rejected' | 'hired';
+  assessmentStatus: 'not_sent' | 'sent' | 'completed';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +79,16 @@ const ApplicantSchema = new Schema<IApplicant>(
       },
       summary: String,
       resumeUrl: String,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'shortlisted', 'rejected', 'hired'],
+      default: 'pending',
+    },
+    assessmentStatus: {
+      type: String,
+      enum: ['not_sent', 'sent', 'completed'],
+      default: 'not_sent',
     },
     metadata: {
       fileName: String,
