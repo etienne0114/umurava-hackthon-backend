@@ -1,4 +1,5 @@
 import { Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import { jobService, CreateJobDTO } from '../services/job.service';
 import { APIError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
@@ -8,7 +9,7 @@ export class JobController {
     try {
       const jobData: CreateJobDTO = {
         ...req.body,
-        createdBy: req.user!.userId,
+        createdBy: new mongoose.Types.ObjectId(req.user!.userId) as any,
         company: req.body.company,
       };
       const job = await jobService.createJob(jobData);
@@ -87,7 +88,7 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      if (existing.createdBy !== userId) {
+      if (existing.createdBy.toString() !== userId && (existing.createdBy as any)._id?.toString() !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
         error.code = 'FORBIDDEN';
@@ -118,7 +119,7 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      if (existing.createdBy !== userId) {
+      if (existing.createdBy.toString() !== userId && (existing.createdBy as any)._id?.toString() !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
         error.code = 'FORBIDDEN';
