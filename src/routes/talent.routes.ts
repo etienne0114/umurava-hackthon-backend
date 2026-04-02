@@ -17,6 +17,8 @@ router.get('/dashboard/engagement', talentController.getEngagementData.bind(tale
 router.get('/recommendations', talentController.getJobRecommendations.bind(talentController));
 router.post('/apply/:jobId', talentController.applyToJob.bind(talentController));
 router.get('/applications', talentController.getApplications.bind(talentController));
+router.post('/saved/:jobId', talentController.saveJob.bind(talentController));
+router.delete('/saved/:jobId', talentController.unsaveJob.bind(talentController));
 
 // CV / Resume upload — parses with Gemini AI and auto-updates profile
 router.post(

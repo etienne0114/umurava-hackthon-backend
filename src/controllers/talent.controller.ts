@@ -3,6 +3,8 @@ import { Application } from '../models/Application';
 import { ProfileView } from '../models/ProfileView';
 import { Job } from '../models/Job';
 import { User } from '../models/User';
+import { Notification } from '../models/Notification';
+import { SavedJob } from '../models/SavedJob';
 import { geminiService } from '../services/gemini.service';
 import { fileService } from '../services/file.service';
 import { parseResumeText } from '../utils/resumeTextParser';
@@ -104,6 +106,7 @@ export class TalentController {
   async getJobRecommendations(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = (req as any).user.userId;
+      const { type = 'best_match' } = req.query;
       const { geminiService } = await import('../services/gemini.service');
 
       // Load user
@@ -113,56 +116,95 @@ export class TalentController {
         return;
       }
 
-      // Fetch active jobs (limit to 5 for real-time performance)
-      const jobs = await Job.find({ status: 'active' })
-        .sort({ createdAt: -1 })
-        .limit(5);
+      let jobs: any[] = [];
+      const query: any = { status: 'active' };
 
-      // Map user to a structured applicant temporary object for objective AI evaluation
-      const tempApplicant = {
-        _id: userId,
-        profile: {
-          name: user.profile.name,
-          email: user.email,
-          skills: user.profile.skills || [],
-          experience: user.profile.experience || [],
-          education: user.profile.education || [],
-          summary: user.profile.bio || '',
-        }
-      } as any;
+      if (type === 'saved') {
+        const savedJobs = await SavedJob.find({ userId }).select('jobId');
+        const jobIds = savedJobs.map(sj => sj.jobId);
+        query._id = { $in: jobIds };
+      }
 
-      // Evaluate each job in parallel using Gemini
-      const recommendations = await Promise.all(
+      // Fetch jobs with population for real company names
+      const baseQuery = Job.find(query).populate('createdBy', 'profile.company');
+      
+      if (type === 'recent') {
+        jobs = await baseQuery.sort({ createdAt: -1 }).limit(10);
+      } else if (type === 'best_match') {
+        jobs = await baseQuery.sort({ createdAt: -1 }).limit(5);
+      } else {
+        // open_jobs or saved
+        jobs = await baseQuery.sort({ createdAt: -1 }).limit(10);
+      }
+
+      // Ensure each job has a real company name and real applicant count
+      const updatedJobs = await Promise.all(
         jobs.map(async (job) => {
-          try {
-            const evaluation = await geminiService.evaluateCandidate(job, tempApplicant);
-            return {
-              ...job.toObject(),
-              matchScore: evaluation.matchScore,
-              evaluation: {
-                strengths: evaluation.strengths,
-                gaps: evaluation.gaps,
-                recommendation: evaluation.recommendation,
-                reasoning: evaluation.reasoning,
-              }
-            };
-          } catch (error) {
-            logger.error(`Failed to evaluate job ${job._id} for user ${userId}:`, error);
-            return {
-              ...job.toObject(),
-              matchScore: 0,
-              evaluation: null
-            };
+          // Real-time applicant counting
+          job.applicantCount = await Application.countDocuments({ jobId: job._id });
+
+          if (!job.company && (job.createdBy as any)?.profile?.company) {
+            job.company = (job.createdBy as any).profile.company;
           }
+          return job;
         })
       );
 
-      // Sort by match score
-      recommendations.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      // If best_match, perform AI evaluation
+      let finalJobs = updatedJobs;
+      if (type === 'best_match') {
+        const tempApplicant = {
+          _id: userId,
+          profile: {
+            name: user.profile.name,
+            email: user.email,
+            skills: user.profile.skills || [],
+            experience: user.profile.experience || [],
+            education: user.profile.education || [],
+            summary: user.profile.bio || '',
+          }
+        } as any;
+
+        finalJobs = await Promise.all(
+          jobs.map(async (job) => {
+            try {
+              const evaluation = await geminiService.evaluateCandidate(job, tempApplicant);
+              return {
+                ...job.toObject(),
+                matchScore: evaluation.matchScore,
+                evaluation: {
+                  strengths: evaluation.strengths,
+                  gaps: evaluation.gaps,
+                  recommendation: evaluation.recommendation,
+                  reasoning: evaluation.reasoning,
+                }
+              };
+            } catch (error) {
+              return { ...job.toObject(), matchScore: 0, evaluation: null };
+            }
+          })
+        );
+        finalJobs.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      } else {
+        finalJobs = jobs.map(j => j.toObject());
+      }
+
+      // Add isSaved status for current user
+      const savedJobIds = await SavedJob.find({ 
+        userId, 
+        jobId: { $in: finalJobs.map(j => j._id) } 
+      }).distinct('jobId');
+      
+      const savedIdsStrings = savedJobIds.map(id => id.toString());
+
+      finalJobs = finalJobs.map(job => ({
+        ...job,
+        isSaved: savedIdsStrings.includes(job._id.toString())
+      }));
 
       res.json({
         success: true,
-        data: recommendations,
+        data: finalJobs,
       });
     } catch (error) {
       next(error);
@@ -203,6 +245,21 @@ export class TalentController {
       });
 
       await application.save();
+
+      // Increment applicant count on job
+      await Job.findByIdAndUpdate(jobId, { $inc: { applicantCount: 1 } });
+
+      // Create notification for company
+      if (job.createdBy) {
+        const applicant = await User.findById(userId);
+        await Notification.create({
+          userId: job.createdBy,
+          type: 'info',
+          title: 'New Job Application',
+          message: `${applicant?.profile.name || 'A talent'} has applied for your ${job.title} position.`,
+          link: `/company/jobs/${jobId}`,
+        });
+      }
 
       logger.info(`Talent ${userId} applied to job ${jobId}`);
 
@@ -357,6 +414,42 @@ export class TalentController {
       });
     } catch (error: any) {
       logger.error('Resume upload error:', error);
+      next(error);
+    }
+  }
+
+  /**
+   * Save a job for later.
+   */
+  async saveJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = (req as any).user.userId;
+      const { jobId } = req.params;
+
+      await SavedJob.findOneAndUpdate(
+        { userId, jobId },
+        { userId, jobId },
+        { upsert: true, new: true }
+      );
+
+      res.json({ success: true, message: 'Job saved successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Remove a job from saved list.
+   */
+  async unsaveJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = (req as any).user.userId;
+      const { jobId } = req.params;
+
+      await SavedJob.findOneAndDelete({ userId, jobId });
+
+      res.json({ success: true, message: 'Job removed from saved' });
+    } catch (error) {
       next(error);
     }
   }
