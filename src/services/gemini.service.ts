@@ -65,6 +65,26 @@ export class GeminiService {
 
       return evaluation;
     } catch (error: any) {
+      const isQuotaExceeded = error.message?.includes('429') || error.message?.includes('quota');
+      
+      if (isQuotaExceeded) {
+        logger.warn(`Gemini quota exceeded for candidate ${applicant._id} - using fallback evaluation`);
+        return {
+          matchScore: 50,
+          strengths: ['AI Evaluation paused due to rate limits'],
+          gaps: [],
+          risks: [],
+          recommendation: 'consider' as Recommendation,
+          reasoning: 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure the system remains functional. Please try again in 1-2 minutes for a high-fidelity AI match score.',
+          scoreBreakdown: {
+            skills: 50,
+            experience: 50,
+            education: 50,
+            relevance: 50,
+          }
+        };
+      }
+      
       logger.error(`Error evaluating candidate ${applicant._id}:`, error);
       throw new Error(`Gemini API error: ${error.message}`);
     }
