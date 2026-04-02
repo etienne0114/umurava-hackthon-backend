@@ -1,8 +1,19 @@
+import mongoose from 'mongoose';
 import { Applicant, IApplicant } from '../models/Applicant';
 import { Job } from '../models/Job';
 import { fileService, FileType } from './file.service';
 import { umuravaService } from './umurava.service';
 import logger from '../utils/logger';
+
+function rawJobIdFilter(jobId: string): object {
+  if (mongoose.Types.ObjectId.isValid(jobId)) {
+    const oid = new mongoose.Types.ObjectId(jobId);
+    // Use $or to match whether jobId is stored as ObjectId or plain string
+    // Note: uses raw filter so Mongoose casting doesn't collapse both branches to ObjectId
+    return { $or: [{ jobId: oid }, { jobId: jobId }] };
+  }
+  return { jobId };
+}
 
 export class ApplicantService {
   async importFromUmurava(jobId: string, profileIds: string[]): Promise<IApplicant[]> {
@@ -118,11 +129,27 @@ export class ApplicantService {
     offset: number = 0
   ): Promise<{ applicants: IApplicant[]; total: number }> {
     try {
-      const [applicants, total] = await Promise.all([
-        Applicant.find({ jobId }).limit(limit).skip(offset).sort({ createdAt: -1 }),
-        Applicant.countDocuments({ jobId }),
+      // Use the raw MongoDB collection to bypass Mongoose casting,
+      // so $or correctly queries BOTH ObjectId and string representations.
+      const collection = Applicant.collection;
+      const filter = rawJobIdFilter(jobId);
+
+      const [rawDocs, total] = await Promise.all([
+        collection
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip(offset)
+          .limit(limit)
+          .toArray(),
+        collection.countDocuments(filter),
       ]);
 
+      // Re-hydrate plain docs as Mongoose documents
+      const applicants = rawDocs.map((doc) =>
+        Applicant.hydrate(doc as any)
+      ) as unknown as IApplicant[];
+
+      logger.info(`getApplicantsByJob: jobId=${jobId}, found=${total}`);
       return { applicants, total };
     } catch (error: any) {
       logger.error(`Error fetching applicants for job ${jobId}:`, error);

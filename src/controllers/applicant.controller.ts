@@ -40,9 +40,7 @@ export class ApplicantController {
 
       res.status(201).json({
         success: true,
-        data: {
-          applicants,
-        },
+        data: applicants,
         meta: {
           count: applicants.length,
           timestamp: new Date().toISOString(),
@@ -68,9 +66,7 @@ export class ApplicantController {
 
       res.status(201).json({
         success: true,
-        data: {
-          applicants,
-        },
+        data: applicants,
         meta: {
           count: applicants.length,
           timestamp: new Date().toISOString(),
