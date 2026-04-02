@@ -88,7 +88,8 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      if (existing.createdBy.toString() !== userId && (existing.createdBy as any)._id?.toString() !== userId) {
+      const ownerId = (existing.createdBy as any)._id?.toString() || existing.createdBy.toString();
+      if (ownerId !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
         error.code = 'FORBIDDEN';
@@ -119,7 +120,8 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      if (existing.createdBy.toString() !== userId && (existing.createdBy as any)._id?.toString() !== userId) {
+      const ownerId = (existing.createdBy as any)._id?.toString() || existing.createdBy.toString();
+      if (ownerId !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
         error.code = 'FORBIDDEN';
