@@ -1,4 +1,5 @@
 import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
+import { generateWithOpenRouter, isOpenRouterConfigured } from '../config/openrouter';
 import { IJob } from '../models/Job';
 import { IApplicant } from '../models/Applicant';
 import {
@@ -44,6 +45,66 @@ export class GeminiService {
   private cache = new Map<string, { data: CandidateEvaluation; expiresAt: number }>();
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
+  constructor() {
+    if (!isOpenRouterConfigured()) {
+      logger.warn(
+        'OpenRouter fallback is disabled: OPENROUTER_API_KEY is not set. Gemini quota errors will fall back to neutral scoring.'
+      );
+    } else {
+      logger.info(
+        `OpenRouter fallback enabled with model: ${process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'}`
+      );
+    }
+  }
+
+  private isGeminiQuotaError(error: any): boolean {
+    const message = String(error?.message || '');
+    const upper = message.toUpperCase();
+    return (
+      message.includes('429') ||
+      upper.includes('RESOURCE_EXHAUSTED') ||
+      upper.includes('TOO MANY REQUESTS') ||
+      upper.includes('RATE LIMIT') ||
+      upper.includes('QUOTA')
+    );
+  }
+
+  private async generateWithGeminiThenFallback(
+    prompt: string
+  ): Promise<{ text: string; provider: 'gemini' | 'openrouter'; model: string }> {
+    try {
+      const result = await this.model.generateContent(prompt);
+      return {
+        text: result.response.text(),
+        provider: 'gemini',
+        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+      };
+    } catch (error: any) {
+      const shouldFallback = this.isGeminiQuotaError(error);
+      if (!shouldFallback) {
+        throw error;
+      }
+
+      if (!isOpenRouterConfigured()) {
+        logger.warn('Gemini quota/rate limit hit but OpenRouter fallback is not configured (missing OPENROUTER_API_KEY)');
+        throw error;
+      }
+
+      logger.warn('Gemini quota/rate limit reached, switching to OpenRouter fallback');
+
+      const fallback = await generateWithOpenRouter(
+        [{ role: 'user', content: prompt }],
+        process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'
+      );
+
+      return {
+        text: fallback.text,
+        provider: 'openrouter',
+        model: fallback.model,
+      };
+    }
+  }
+
   async evaluateCandidate(job: IJob, applicant: IApplicant): Promise<CandidateEvaluation> {
     const cacheKey = `${job._id}-${applicant._id}`;
 
@@ -72,7 +133,7 @@ export class GeminiService {
         ? 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure screening completes. Please regenerate in 1-2 minutes for accurate scores.'
         : `Gemini evaluation encountered an issue (${error.message}). A neutral score has been assigned — please regenerate screening for accurate results.`;
 
-      logger.warn(`Gemini evaluation fallback for candidate ${applicant._id}: ${error.message}`);
+      logger.warn(`AI provider fallback failed for candidate ${applicant._id}: ${error.message}`);
       return {
         matchScore: 50,
         strengths: ['AI Evaluation temporarily unavailable'],
@@ -87,9 +148,8 @@ export class GeminiService {
 
   private async performEvaluation(job: IJob, applicant: IApplicant): Promise<CandidateEvaluation> {
     const prompt = buildEvaluationPrompt(job, applicant);
-    
-    const result = await this.model.generateContent(prompt);
-    const text = result.response.text();
+    const generated = await this.generateWithGeminiThenFallback(prompt);
+    const text = generated.text;
 
     const parsed = parseGeminiResponse(text);
 
@@ -112,7 +172,7 @@ export class GeminiService {
       scoreBreakdown,
       geminiResponse: {
         rawResponse: text,
-        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        model: generated.model,
       },
     };
   }
@@ -161,8 +221,8 @@ CV TEXT:
 ${cvText.slice(0, 8000)}
 ---`;
 
-          const result = await this.model.generateContent(prompt);
-          const text = result.response.text().trim();
+          const generated = await this.generateWithGeminiThenFallback(prompt);
+          const text = generated.text.trim();
 
           // Extract JSON from response
           const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -253,8 +313,8 @@ Return ONLY a valid JSON array — no markdown fences, no extra text:
   { "question": "...", "expectedAnswer": "..." }
 ]`;
 
-          const result = await this.model.generateContent(prompt);
-          const text = result.response.text().trim();
+          const generated = await this.generateWithGeminiThenFallback(prompt);
+          const text = generated.text.trim();
 
           const jsonMatch = text.match(/\[[\s\S]*\]/);
           if (!jsonMatch) throw new Error('No valid JSON array found in Gemini response');

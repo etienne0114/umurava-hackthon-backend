@@ -9,6 +9,15 @@ export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment-platform',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2',
+  openRouterSiteUrl:
+    process.env.OPENROUTER_SITE_URL ||
+    process.env.CORS_ORIGIN ||
+    process.env.CORS_ALLOWED_ORIGINS?.split(',')[0] ||
+    '',
+  openRouterAppName: process.env.OPENROUTER_APP_NAME || 'Umurava Recruit',
   umuravaApiUrl: process.env.UMURAVA_API_URL || 'https://api.umurava.africa',
   umuravaApiKey: process.env.UMURAVA_API_KEY || '',
   jwtSecret: process.env.JWT_SECRET || 'default-secret-change-in-production',
