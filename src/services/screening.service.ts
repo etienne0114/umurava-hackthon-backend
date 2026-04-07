@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Job, IJob } from '../models/Job';
 import { Applicant, IApplicant } from '../models/Applicant';
 import { ScreeningSession, IScreeningSession } from '../models/ScreeningSession';
@@ -5,6 +6,14 @@ import { ScreeningResult, IScreeningResult } from '../models/ScreeningResult';
 import { geminiService, CandidateEvaluation } from './gemini.service';
 import { WeightConfig } from '../types';
 import logger from '../utils/logger';
+
+function applicantsByJobFilter(jobId: string): object {
+  if (mongoose.Types.ObjectId.isValid(jobId)) {
+    const oid = new mongoose.Types.ObjectId(jobId);
+    return { $or: [{ jobId: oid }, { jobId: jobId }] };
+  }
+  return { jobId };
+}
 
 export interface ScreeningOptions {
   topN?: number;
@@ -20,7 +29,7 @@ export class ScreeningService {
         throw new Error('Job not found');
       }
 
-      const applicants = await Applicant.find({ jobId });
+      const applicants = await Applicant.find(applicantsByJobFilter(jobId));
       if (applicants.length === 0) {
         throw new Error('No applicants found for this job');
       }

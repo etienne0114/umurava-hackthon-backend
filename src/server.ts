@@ -74,7 +74,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Input sanitization middleware
 app.use(sanitizeRequest); // NoSQL injection prevention
-app.use(sanitizeRequest); // NoSQL injection prevention
 app.use(sanitizeBody); // XSS prevention
 
 // Request logging
@@ -84,13 +83,21 @@ app.use((req: Request, _res: Response, next) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (_req: Request, res: Response) => {
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const { getGeminiModel } = await import('./config/gemini');
+  let geminiStatus = 'ok';
+  try {
+    const model = getGeminiModel();
+    await model.generateContent('ping');
+  } catch {
+    geminiStatus = 'degraded';
+  }
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     services: {
       database: 'ok',
-      gemini: 'ok',
+      gemini: geminiStatus,
     },
   });
 });

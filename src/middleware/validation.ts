@@ -28,7 +28,7 @@ export const jobSchema = Joi.object({
   title: Joi.string().min(3).max(200).required(),
   description: Joi.string().min(10).max(5000).required(),
   requirements: Joi.object({
-    skills: Joi.array().items(Joi.string()).min(1).required(),
+    skills: Joi.string().min(1).required(),
     experience: Joi.object({
       minYears: Joi.number().min(0).max(50).required(),
       maxYears: Joi.number().min(0).max(50).optional(),

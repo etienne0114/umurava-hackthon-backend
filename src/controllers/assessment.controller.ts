@@ -26,22 +26,13 @@ export class AssessmentController {
         return res.status(404).json({ success: false, message: 'Applicant or Job not found' });
       }
 
-      // Check if assessment already exists
-      let assessment = await Assessment.findOne({ applicantId, jobId });
-      
-      if (assessment) {
-        return res.status(200).json({ 
-          success: true, 
-          data: assessment,
-          message: 'Retrieved existing assessment' 
-        });
-      }
+      // Always generate fresh questions — delete previous assessment if exists
+      await Assessment.findOneAndDelete({ applicantId, jobId });
 
-      // Generate new assessment using Gemini
       logger.info(`Generating AI assessment for applicant ${applicantId} [Job: ${jobId}]`);
       const questions = await geminiService.generateTechnicalTest(job, applicant);
 
-      assessment = await Assessment.create({
+      const assessment = await Assessment.create({
         jobId,
         applicantId,
         questions,

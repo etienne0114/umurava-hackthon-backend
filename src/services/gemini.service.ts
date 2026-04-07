@@ -41,16 +41,16 @@ export interface ParsedResumeProfile {
 
 export class GeminiService {
   private model = getGeminiModel();
-  private cache = new Map<string, CandidateEvaluation>();
+  private cache = new Map<string, { data: CandidateEvaluation; expiresAt: number }>();
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
   async evaluateCandidate(job: IJob, applicant: IApplicant): Promise<CandidateEvaluation> {
     const cacheKey = `${job._id}-${applicant._id}`;
-    
+
     const cached = this.cache.get(cacheKey);
-    if (cached) {
+    if (cached && cached.expiresAt > Date.now()) {
       logger.debug(`Using cached evaluation for ${cacheKey}`);
-      return cached;
+      return cached.data;
     }
 
     try {
@@ -60,33 +60,28 @@ export class GeminiService {
         }, 3, 1000);
       });
 
-      this.cache.set(cacheKey, evaluation);
+      this.cache.set(cacheKey, { data: evaluation, expiresAt: Date.now() + this.CACHE_TTL });
       setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
 
       return evaluation;
     } catch (error: any) {
-      const isQuotaExceeded = error.message?.includes('429') || error.message?.includes('quota');
-      
-      if (isQuotaExceeded) {
-        logger.warn(`Gemini quota exceeded for candidate ${applicant._id} - using fallback evaluation`);
-        return {
-          matchScore: 50,
-          strengths: ['AI Evaluation paused due to rate limits'],
-          gaps: [],
-          risks: [],
-          recommendation: 'consider' as Recommendation,
-          reasoning: 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure the system remains functional. Please try again in 1-2 minutes for a high-fidelity AI match score.',
-          scoreBreakdown: {
-            skills: 50,
-            experience: 50,
-            education: 50,
-            relevance: 50,
-          }
-        };
-      }
-      
-      logger.error(`Error evaluating candidate ${applicant._id}:`, error);
-      throw new Error(`Gemini API error: ${error.message}`);
+      const isQuotaExceeded = error.message?.includes('429') || error.message?.includes('quota')
+        || error.message?.includes('RESOURCE_EXHAUSTED');
+
+      const reasoning = isQuotaExceeded
+        ? 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure screening completes. Please regenerate in 1-2 minutes for accurate scores.'
+        : `Gemini evaluation encountered an issue (${error.message}). A neutral score has been assigned — please regenerate screening for accurate results.`;
+
+      logger.warn(`Gemini evaluation fallback for candidate ${applicant._id}: ${error.message}`);
+      return {
+        matchScore: 50,
+        strengths: ['AI Evaluation temporarily unavailable'],
+        gaps: [],
+        risks: [],
+        recommendation: 'consider' as Recommendation,
+        reasoning,
+        scoreBreakdown: { skills: 50, experience: 50, education: 50, relevance: 50 },
+      };
     }
   }
 
@@ -94,8 +89,7 @@ export class GeminiService {
     const prompt = buildEvaluationPrompt(job, applicant);
     
     const result = await this.model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const text = result.response.text();
 
     const parsed = parseGeminiResponse(text);
 
@@ -118,7 +112,7 @@ export class GeminiService {
       scoreBreakdown,
       geminiResponse: {
         rawResponse: text,
-        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
       },
     };
   }
@@ -168,8 +162,7 @@ ${cvText.slice(0, 8000)}
 ---`;
 
           const result = await this.model.generateContent(prompt);
-          const response = await result.response;
-          const text = response.text().trim();
+          const text = result.response.text().trim();
 
           // Extract JSON from response
           const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -214,36 +207,64 @@ ${cvText.slice(0, 8000)}
     try {
       return await geminiRateLimiter.execute(async () => {
         return await retryWithBackoff(async () => {
-          const prompt = `You are a world-class technical interviewer for a ${job.title} position. 
-You are interviewing a candidate named ${applicant.profile.name} who highlights these skills: ${applicant.profile.skills.join(', ')}.
+          // Strip HTML tags from rich-text fields
+          const stripHtml = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
-Your goal is to generate 5 to 10 highly specific technical screening questions to VALIDATE if their real-world experience matches the skills they've claimed.
+          const jobSkills = stripHtml(job.requirements.skills);
+          const jobDescription = stripHtml(job.description).slice(0, 2000);
+          const experienceRange = job.requirements.experience.maxYears
+            ? `${job.requirements.experience.minYears}–${job.requirements.experience.maxYears} years`
+            : `${job.requirements.experience.minYears}+ years`;
+          const educationReqs = job.requirements.education.join(', ') || 'Not specified';
+          const candidateExperience = applicant.profile.experience
+            .map(e => `${e.title} at ${e.company} (${e.duration})`)
+            .join('; ') || 'Not provided';
 
-JOB DESCRIPTION:
-${job.description}
+          const prompt = `You are an expert technical interviewer for the role of "${job.title}"${job.company ? ` at ${job.company}` : ''}.
 
-CANDIDATE SUMMARY:
-${applicant.profile.summary || 'Not provided'}
+=== JOB REQUIREMENTS (SOURCE OF TRUTH) ===
+Title: ${job.title}
+Required Experience: ${experienceRange}
+Required Skills: ${jobSkills}
+Education Required: ${educationReqs}
+Job Description: ${jobDescription}
+Location/Mode: ${job.requirements.location || 'Not specified'}
 
-Instructions:
-1. Generate between 5 and 10 questions.
-2. Each question should be practical and designed to test deep knowledge, not just definitions.
-3. Tailor questions to the intersection of the candidate's skills and the specific requirements of the job.
-4. Include a brief "expectedAnswer" for each question to help the recruiter evaluate the response.
+=== CANDIDATE CONTEXT ===
+Candidate: ${applicant.profile.name}
+Their Claimed Skills: ${applicant.profile.skills.join(', ') || 'Not listed'}
+Their Experience: ${candidateExperience}
+Their Summary: ${applicant.profile.summary || 'Not provided'}
 
-Return ONLY a JSON array of objects with this structure (no markdown, no extra text):
+=== YOUR TASK ===
+Generate exactly 7 interview questions to screen this candidate for the "${job.title}" role.
+
+STRICT RULES — follow every one:
+1. BASE EVERY QUESTION on the JOB REQUIREMENTS above — not on generic interview templates.
+2. Each question must test a DIFFERENT aspect listed in the job requirements (vary: technical depth, problem-solving, tools/systems knowledge, situational judgment, domain expertise).
+3. Questions must be SCENARIO-BASED or PRACTICAL — no "what is X" definitions.
+4. If the candidate's experience or skills overlap with job requirements, probe for depth and real evidence.
+5. If the candidate lacks a requirement, create a question that would reveal that gap.
+6. NO duplicate or paraphrased questions — each must test something distinct.
+7. expectedAnswer: describe 2–3 concrete points that a strong answer must include.
+
+Return ONLY a valid JSON array — no markdown fences, no extra text:
 [
-  { "question": "The technical question here", "expectedAnswer": "Brief description of what a good answer should include" }
+  { "question": "...", "expectedAnswer": "..." }
 ]`;
 
           const result = await this.model.generateContent(prompt);
-          const response = await result.response;
-          const text = response.text().trim();
+          const text = result.response.text().trim();
 
           const jsonMatch = text.match(/\[[\s\S]*\]/);
           if (!jsonMatch) throw new Error('No valid JSON array found in Gemini response');
 
-          return JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (!Array.isArray(parsed) || parsed.length === 0) {
+            throw new Error('Gemini returned empty or invalid question array');
+          }
+
+          return parsed;
         }, 3, 1000);
       });
     } catch (error: any) {
