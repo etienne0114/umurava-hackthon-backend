@@ -68,7 +68,7 @@ export const getCorsOptions = () => {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         callback(null, true);
       } else {
         console.warn(`CORS blocked request from origin: ${origin}`);
