@@ -1,6 +1,7 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { config, validateConfig } from './config/environment';
 import { connectDatabase } from './config/database';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -40,8 +41,19 @@ app.use('/api/', generalLimiter);
 
 // Serve static uploads BEFORE any other API routes to ensure they aren't intercepted
 // Mount directly under /api/uploads to match the frontend expectations
-// Serve static assets with absolute reliability using __dirname
-const uploadsPath = path.resolve(__dirname, '..', 'uploads');
+// Serve static assets with absolute reliability using config.uploadDir
+const uploadsPath = config.uploadDir;
+
+// Ensure upload directory exists
+if (!fs.existsSync(uploadsPath)) {
+  try {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+    logger.info(`Created upload directory at ${uploadsPath}`);
+  } catch (err) {
+    logger.error(`Failed to create upload directory at ${uploadsPath}:`, err);
+  }
+}
+
 app.use('/api/uploads', express.static(uploadsPath));
 app.use('/uploads', express.static(uploadsPath));
 

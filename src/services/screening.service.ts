@@ -110,7 +110,7 @@ export class ScreeningService {
       const { NotificationController } = await import('../controllers/notification.controller');
       if (job.createdBy) {
         await NotificationController.create(
-          job.createdBy,
+          job.createdBy.toString(),
           'success',
           'Screening Completed',
           `AI screening for "${job.title}" has finished. ${screeningResults.length} candidates were ranked.`,
