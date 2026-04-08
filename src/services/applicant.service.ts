@@ -2,9 +2,12 @@ import mongoose from 'mongoose';
 import { Applicant, IApplicant } from '../models/Applicant';
 import { Job } from '../models/Job';
 import { Application } from '../models/Application';
+import { User } from '../models/User';
 import { fileService, FileType } from './file.service';
 import { umuravaService } from './umurava.service';
 import logger from '../utils/logger';
+import { NotificationController } from '../controllers/notification.controller';
+import { resolveTalentUserIdForApplicant } from '../utils/talentLink';
 
 function rawJobIdFilter(jobId: string): object {
   if (mongoose.Types.ObjectId.isValid(jobId)) {
@@ -71,7 +74,7 @@ export class ApplicantService {
     buffer: Buffer,
     fileType: FileType,
     fileName: string
-  ): Promise<IApplicant[]> {
+  ): Promise<{ applicants: IApplicant[]; stats: { parsed: number; created: number; duplicates: number } }> {
     try {
       const job = await Job.findById(jobId);
       if (!job) {
@@ -80,6 +83,7 @@ export class ApplicantService {
 
       const parsedApplicants = await fileService.parseFile(buffer, fileType, fileName);
       const applicants: IApplicant[] = [];
+      let duplicates = 0;
 
       for (const parsed of parsedApplicants) {
         try {
@@ -106,6 +110,7 @@ export class ApplicantService {
         } catch (error: any) {
           if (error.code === 11000) {
             logger.warn(`Duplicate applicant skipped: ${parsed.email}`);
+            duplicates += 1;
           } else {
             throw error;
           }
@@ -117,7 +122,14 @@ export class ApplicantService {
       });
 
       logger.info(`Uploaded ${applicants.length} applicants from file for job ${jobId}`);
-      return applicants;
+      return {
+        applicants,
+        stats: {
+          parsed: parsedApplicants.length,
+          created: applicants.length,
+          duplicates,
+        },
+      };
     } catch (error: any) {
       logger.error('Error uploading applicants from file:', error);
       throw error;
@@ -230,6 +242,37 @@ export class ApplicantService {
         } catch (syncError) {
           logger.warn(`Failed to sync status for Umurava application: ${syncError}`);
           // We don't throw here to ensure the main applicant update succeeds
+        }
+      }
+
+      if (status === 'hired') {
+        const talentUserId = await resolveTalentUserIdForApplicant(applicant);
+        if (talentUserId) {
+          const job = await Job.findById(applicant.jobId).select('title');
+          const jobTitle = job?.title || 'the role';
+          await NotificationController.create(
+            talentUserId,
+            'success',
+            'You Have Been Hired',
+            `Congratulations! You have been hired for ${jobTitle}.`,
+            '/talent/applications'
+          );
+        } else {
+          const candidateEmail = applicant.profile?.email;
+          if (candidateEmail) {
+            const user = await User.findOne({ email: candidateEmail.toLowerCase() }).select('_id');
+            if (user) {
+              const job = await Job.findById(applicant.jobId).select('title');
+              const jobTitle = job?.title || 'the role';
+              await NotificationController.create(
+                user._id.toString(),
+                'success',
+                'You Have Been Hired',
+                `Congratulations! You have been hired for ${jobTitle}.`,
+                '/talent/applications'
+              );
+            }
+          }
         }
       }
 

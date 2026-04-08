@@ -19,6 +19,7 @@ router.post('/generate', authorize('company'), aiTimeout(80000), (req: any, res)
 router.post('/bulk-generate', authorize('company'), (req: any, res) => assessmentController.bulkGenerateAssessments(req, res));
 router.get('/applicant/:applicantId', authorize('company'), (req: any, res) => assessmentController.getAssessmentByApplicant(req, res));
 router.patch('/applicant/:applicantId/sent', authorize('company'), (req: any, res) => assessmentController.confirmSent(req, res));
+router.get('/job/:jobId/latest-submitted', authorize('company'), (req: any, res) => assessmentController.getLatestSubmittedForJob(req, res));
 
 // Talent endpoints
 router.get('/my', authorize('talent'), (req: any, res) => assessmentController.getMyAssessments(req, res));

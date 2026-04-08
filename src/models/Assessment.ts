@@ -12,6 +12,18 @@ export interface IAssessment extends Document {
     question: string;
     answer: string;
   }>;
+  grading?: {
+    totalScore?: number;
+    perQuestion?: Array<{
+      question: string;
+      score: number;
+      feedback: string;
+    }>;
+    overallFeedback?: string;
+    provider?: string;
+    model?: string;
+    gradedAt?: Date;
+  };
   status: 'pending' | 'completed' | 'expired';
   expiresAt?: Date;
   submittedAt?: Date;
@@ -47,6 +59,20 @@ const AssessmentSchema = new Schema<IAssessment>(
         answer: { type: String, required: true },
       },
     ],
+    grading: {
+      totalScore: Number,
+      perQuestion: [
+        {
+          question: { type: String, required: true },
+          score: { type: Number, required: true },
+          feedback: { type: String, required: true },
+        },
+      ],
+      overallFeedback: String,
+      provider: String,
+      model: String,
+      gradedAt: Date,
+    },
     status: {
       type: String,
       enum: ['pending', 'completed', 'expired'],

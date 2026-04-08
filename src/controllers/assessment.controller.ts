@@ -5,6 +5,8 @@ import { Job } from '../models/Job';
 import { User } from '../models/User';
 import { geminiService } from '../services/gemini.service';
 import logger from '../utils/logger';
+import { NotificationController } from './notification.controller';
+import { getTalentApplicantMatches, resolveTalentUserIdForApplicant } from '../utils/talentLink';
 
 export class AssessmentController {
   private sanitizeAssessmentForTalent(assessment: any) {
@@ -17,42 +19,6 @@ export class AssessmentController {
     };
   }
 
-  private async getTalentApplicantIds(userId: string): Promise<string[]> {
-    const user = await User.findById(userId).select('email');
-
-    const query: any = {
-      $or: [{ sourceId: userId }],
-    };
-
-    if (user?.email) {
-      query.$or.push({ 'profile.email': user.email.toLowerCase() });
-    }
-
-    const applicants = await Applicant.find(query).select('_id');
-    return applicants.map((a) => a._id.toString());
-  }
-
-  private async resolveTalentUserIdForApplicant(applicant: any): Promise<string | undefined> {
-    // 1) Prefer sourceId when it is a valid local User ObjectId
-    if (applicant?.sourceId) {
-      const sourceId = String(applicant.sourceId);
-      const localUser = await User.findById(sourceId).select('_id');
-      if (localUser) {
-        return localUser._id.toString();
-      }
-    }
-
-    // 2) Fallback to matching by applicant email
-    const email = applicant?.profile?.email?.toLowerCase?.();
-    if (email) {
-      const emailUser = await User.findOne({ email }).select('_id');
-      if (emailUser) {
-        return emailUser._id.toString();
-      }
-    }
-
-    return undefined;
-  }
 
   /**
    * Generate technical questions for an applicant based on job requirements
@@ -79,7 +45,7 @@ export class AssessmentController {
 
       logger.info(`Generating AI assessment for applicant ${applicantId} [Job: ${jobId}]`);
       const questions = await geminiService.generateTechnicalTest(job, applicant);
-      const talentUserId = await this.resolveTalentUserIdForApplicant(applicant);
+      const talentUserId = await resolveTalentUserIdForApplicant(applicant);
 
       const assessment = await Assessment.create({
         jobId,
@@ -106,7 +72,13 @@ export class AssessmentController {
   async getAssessmentByApplicant(req: Request, res: Response) {
     try {
       const { applicantId } = req.params;
-      const assessment = await Assessment.findOne({ applicantId }).sort({ createdAt: -1 });
+      // Prefer the most recent completed assessment (so recruiters see submitted answers + scores)
+      let assessment = await Assessment.findOne({ applicantId, status: 'completed' })
+        .sort({ submittedAt: -1, createdAt: -1 });
+
+      if (!assessment) {
+        assessment = await Assessment.findOne({ applicantId }).sort({ createdAt: -1 });
+      }
 
       if (!assessment) {
         return res.status(404).json({ success: false, message: 'Assessment not found' });
@@ -114,6 +86,30 @@ export class AssessmentController {
 
       return res.status(200).json({ success: true, data: assessment });
     } catch (error: any) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * Get latest submitted assessment for a job (company view).
+   */
+  async getLatestSubmittedForJob(req: Request, res: Response) {
+    try {
+      const { jobId } = req.params;
+      if (!jobId) {
+        return res.status(400).json({ success: false, message: 'Job ID is required' });
+      }
+
+      const assessment = await Assessment.findOne({ jobId, status: 'completed' })
+        .sort({ submittedAt: -1, createdAt: -1 })
+        .populate('applicantId', 'profile.name');
+
+      return res.status(200).json({
+        success: true,
+        data: assessment || null,
+      });
+    } catch (error: any) {
+      logger.error('Error in getLatestSubmittedForJob:', error);
       return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -127,7 +123,7 @@ export class AssessmentController {
       const { questions, jobId } = req.body;
       const existingApplicant = await Applicant.findById(applicantId);
       const resolvedTalentUserId = existingApplicant
-        ? await this.resolveTalentUserIdForApplicant(existingApplicant)
+        ? await resolveTalentUserIdForApplicant(existingApplicant)
         : undefined;
 
       // If recruiter edited questions, save them now
@@ -162,7 +158,19 @@ export class AssessmentController {
         );
       }
 
-      return res.status(200).json({ 
+      if (resolvedTalentUserId) {
+        const job = jobId ? await Job.findById(jobId).select('title') : null;
+        const jobTitle = job?.title || 'a position';
+        await NotificationController.create(
+          resolvedTalentUserId,
+          'info',
+          'Quick Test Assigned',
+          `You have received a quick test for ${jobTitle}. Please complete it as soon as possible.`,
+          '/talent/tests'
+        );
+      }
+
+      return res.status(200).json({
         success: true, 
         message: 'Assessment marked as sent',
         data: { assessmentStatus: applicant.assessmentStatus }
@@ -210,15 +218,16 @@ export class AssessmentController {
           if (!assessment) {
             // Generate new assessment using Gemini
             const questions = await geminiService.generateTechnicalTest(job, applicant);
+            const resolvedTalentUserId = await resolveTalentUserIdForApplicant(applicant);
             assessment = await Assessment.create({
               jobId,
               applicantId,
-              talentUserId: await this.resolveTalentUserIdForApplicant(applicant),
+              talentUserId: resolvedTalentUserId,
               questions,
               status: 'pending',
             });
           } else if (!assessment.talentUserId) {
-            const resolvedTalentUserId = await this.resolveTalentUserIdForApplicant(applicant);
+            const resolvedTalentUserId = await resolveTalentUserIdForApplicant(applicant);
             if (resolvedTalentUserId) {
               assessment.talentUserId = resolvedTalentUserId as any;
               await assessment.save();
@@ -227,6 +236,16 @@ export class AssessmentController {
 
           // Mark as sent for high-fidelity bulk action
           await Applicant.findByIdAndUpdate(applicantId, { assessmentStatus: 'sent' });
+
+          if (assessment?.talentUserId) {
+            await NotificationController.create(
+              assessment.talentUserId.toString(),
+              'info',
+              'Quick Test Assigned',
+              `You have received a quick test for ${job.title}. Please complete it as soon as possible.`,
+              '/talent/tests'
+            );
+          }
 
           results.push({ applicantId, status: 'success' });
           successCount++;
@@ -264,21 +283,7 @@ export class AssessmentController {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
       }
 
-      const user = await User.findById(userId).select('email');
-      const talentEmail = user?.email?.toLowerCase();
-
-      // Collect all applicant IDs linked to this talent (by sourceId or email)
-      const applicantIds = await this.getTalentApplicantIds(userId);
-
-      // Also find applicants whose email matches the talent's email (catches company-uploaded applicants)
-      let emailApplicantIds: string[] = [];
-      if (talentEmail) {
-        const emailApplicants = await Applicant.find({
-          'profile.email': { $regex: new RegExp(`^${talentEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-        }).select('_id');
-        emailApplicantIds = emailApplicants.map((a) => a._id.toString());
-      }
-
+      const { applicantIds, emailApplicantIds } = await getTalentApplicantMatches(userId);
       const allApplicantIds = [...new Set([...applicantIds, ...emailApplicantIds])];
 
       const orConditions: any[] = [{ talentUserId: userId }];
@@ -377,9 +382,47 @@ export class AssessmentController {
       if (!assessment.talentUserId) {
         assessment.talentUserId = userId as any;
       }
+
+      const job = await Job.findById(assessment.jobId);
+      let grading: any = null;
+      try {
+        if (job) {
+          grading = await geminiService.gradeTechnicalTest(
+            job,
+            applicant,
+            assessment.questions,
+            cleanedAnswers
+          );
+        }
+      } catch (gradingError: any) {
+        logger.warn(`AI grading failed for assessment ${assessment._id}: ${gradingError.message}`);
+      }
+
+      if (grading) {
+        (assessment as any).grading = {
+          totalScore: grading.totalScore,
+          perQuestion: grading.perQuestion,
+          overallFeedback: grading.overallFeedback,
+          provider: grading.provider,
+          model: grading.model,
+          gradedAt: new Date(),
+        };
+      }
+
       await assessment.save();
 
       await Applicant.findByIdAndUpdate(applicant._id, { assessmentStatus: 'completed' });
+
+      if (job?.createdBy) {
+        const scoreText = grading?.totalScore != null ? `Score: ${grading.totalScore}/100.` : 'Score pending.';
+        await NotificationController.create(
+          job.createdBy.toString(),
+          'success',
+          'Quick Test Submitted',
+          `${applicant.profile.name} submitted the quick test for ${job.title}. ${scoreText}`,
+          `/company/screening?jobId=${job._id}&applicantId=${applicant._id}`
+        );
+      }
 
       return res.status(200).json({
         success: true,

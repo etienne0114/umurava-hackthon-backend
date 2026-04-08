@@ -12,6 +12,7 @@ Orchestrating the core intelligence layer using the **Gemini API**. The backend 
 ### 2. Multi-Format Applicant Ingestion
 The system supports multiple ingestion streams:
 - **PDF/CSV/Excell Parsing**: Intelligent text extraction and normalization of resume data.
+- **PDF/CSV/Excel Parsing**: Intelligent text extraction and normalization of resume data (PDF resumes supported; CSV/Excel rows are treated as individual applicants).
 - **Umurava Platform Import**: Direct interface with the Umurava talent ecosystem.
 
 ### 3. Explainable AI Reasoning

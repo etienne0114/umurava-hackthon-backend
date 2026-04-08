@@ -14,18 +14,50 @@ export interface ParsedApplicant {
   rawText?: string;
 }
 
-export const parseSkillsString = (skillsStr: string): string[] => {
-  if (!skillsStr) return [];
-  return skillsStr
+const normalizeKey = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const normalizeRow = (row: Record<string, any>): Record<string, any> => {
+  const normalized: Record<string, any> = {};
+  Object.entries(row || {}).forEach(([key, value]) => {
+    const safeKey = normalizeKey(key);
+    if (!safeKey) return;
+    if (normalized[safeKey] === undefined) {
+      normalized[safeKey] = value;
+    }
+  });
+  return normalized;
+};
+
+const pickField = (row: Record<string, any>, aliases: string[]): any => {
+  for (const alias of aliases) {
+    const key = normalizeKey(alias);
+    if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+      return row[key];
+    }
+  }
+  return '';
+};
+
+const asText = (value: any): string => {
+  if (value === undefined || value === null) return '';
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value);
+};
+
+export const parseSkillsString = (skillsStr: string | any): string[] => {
+  const raw = asText(skillsStr);
+  if (!raw) return [];
+  return raw
     .split(/[,;|]/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 };
 
-export const parseExperienceString = (expStr: string): ExperienceEntry[] => {
-  if (!expStr) return [];
+export const parseExperienceString = (expStr: string | any): ExperienceEntry[] => {
+  const raw = asText(expStr);
+  if (!raw) return [];
   
-  const entries = expStr.split(/\n|;/).filter((e) => e.trim());
+  const entries = raw.split(/\n|;/).filter((e) => e.trim());
   return entries.map((entry) => {
     const parts = entry.split('|').map((p) => p.trim());
     return {
@@ -37,10 +69,11 @@ export const parseExperienceString = (expStr: string): ExperienceEntry[] => {
   });
 };
 
-export const parseEducationString = (eduStr: string): EducationEntry[] => {
-  if (!eduStr) return [];
+export const parseEducationString = (eduStr: string | any): EducationEntry[] => {
+  const raw = asText(eduStr);
+  if (!raw) return [];
   
-  const entries = eduStr.split(/\n|;/).filter((e) => e.trim());
+  const entries = raw.split(/\n|;/).filter((e) => e.trim());
   return entries.map((entry) => {
     const parts = entry.split('|').map((p) => p.trim());
     return {
@@ -59,18 +92,32 @@ export const parseCSV = (buffer: Buffer): Promise<ParsedApplicant[]> => {
     stream
       .pipe(csv())
       .on('data', (row: any) => {
-        const name = row.name || row.Name || row.NAME || '';
-        const email = row.email || row.Email || row.EMAIL || '';
+        const normalized = normalizeRow(row);
+        const name = asText(pickField(normalized, [
+          'name',
+          'full name',
+          'fullname',
+          'candidate name',
+          'applicant name',
+          'applicant',
+        ]));
+        const email = asText(pickField(normalized, [
+          'email',
+          'e-mail',
+          'email address',
+          'emailaddress',
+          'mail',
+        ]));
 
         if (name && email) {
           applicants.push({
             name,
             email: email.toLowerCase(),
-            phone: row.phone || row.Phone || row.PHONE,
-            skills: parseSkillsString(row.skills || row.Skills || row.SKILLS || ''),
-            experience: parseExperienceString(row.experience || row.Experience || ''),
-            education: parseEducationString(row.education || row.Education || ''),
-            summary: row.summary || row.Summary || row.SUMMARY,
+            phone: asText(pickField(normalized, ['phone', 'phone number', 'phonenumber', 'mobile', 'telephone'])),
+            skills: parseSkillsString(pickField(normalized, ['skills', 'skill', 'skillset', 'technologies', 'tech stack', 'stack'])),
+            experience: parseExperienceString(pickField(normalized, ['experience', 'work experience', 'employment', 'work history'])),
+            education: parseEducationString(pickField(normalized, ['education', 'degree', 'qualification', 'academic', 'school', 'university'])),
+            summary: asText(pickField(normalized, ['summary', 'bio', 'about', 'profile', 'notes'])),
           });
         }
       })
@@ -96,18 +143,32 @@ export const parseExcel = async (buffer: Buffer): Promise<ParsedApplicant[]> => 
     const applicants: ParsedApplicant[] = [];
 
     for (const row of rows) {
-      const name = row.name || row.Name || row.NAME || '';
-      const email = row.email || row.Email || row.EMAIL || '';
+      const normalized = normalizeRow(row);
+      const name = asText(pickField(normalized, [
+        'name',
+        'full name',
+        'fullname',
+        'candidate name',
+        'applicant name',
+        'applicant',
+      ]));
+      const email = asText(pickField(normalized, [
+        'email',
+        'e-mail',
+        'email address',
+        'emailaddress',
+        'mail',
+      ]));
 
       if (name && email) {
         applicants.push({
           name,
           email: email.toLowerCase(),
-          phone: row.phone || row.Phone || row.PHONE,
-          skills: parseSkillsString(row.skills || row.Skills || row.SKILLS || ''),
-          experience: parseExperienceString(row.experience || row.Experience || ''),
-          education: parseEducationString(row.education || row.Education || ''),
-          summary: row.summary || row.Summary || row.SUMMARY,
+          phone: asText(pickField(normalized, ['phone', 'phone number', 'phonenumber', 'mobile', 'telephone'])),
+          skills: parseSkillsString(pickField(normalized, ['skills', 'skill', 'skillset', 'technologies', 'tech stack', 'stack'])),
+          experience: parseExperienceString(pickField(normalized, ['experience', 'work experience', 'employment', 'work history'])),
+          education: parseEducationString(pickField(normalized, ['education', 'degree', 'qualification', 'academic', 'school', 'university'])),
+          summary: asText(pickField(normalized, ['summary', 'bio', 'about', 'profile', 'notes'])),
         });
       }
     }
