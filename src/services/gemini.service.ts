@@ -332,6 +332,78 @@ Return ONLY a valid JSON array — no markdown fences, no extra text:
       throw new Error(`Technical test generation failed: ${error.message}`);
     }
   }
+
+  async gradeTechnicalTest(
+    job: IJob,
+    applicant: IApplicant,
+    questions: Array<{ question: string; expectedAnswer: string }>,
+    answers: Array<{ question: string; answer: string }>
+  ): Promise<{
+    totalScore: number;
+    perQuestion: Array<{ question: string; score: number; feedback: string }>;
+    overallFeedback: string;
+    provider: 'gemini' | 'openrouter';
+    model: string;
+  }> {
+    const cleanedAnswers = answers.map((a) => ({
+      question: a.question,
+      answer: a.answer,
+    }));
+
+    const prompt = `You are an expert technical interviewer. Score the candidate's answers against the expected answers.
+
+Job Title: ${job.title}
+Candidate: ${applicant.profile.name}
+
+You will receive a list of questions with expected answers and the candidate's answers.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "totalScore": 0-100,
+  "overallFeedback": "short summary",
+  "perQuestion": [
+    { "question": "...", "score": 0-10, "feedback": "brief feedback" }
+  ]
+}
+
+Rules:
+- Score each question from 0-10.
+- totalScore must be the average of perQuestion scores scaled to 0-100.
+- Keep feedback short and constructive.
+- No markdown, no extra text.
+
+DATA:
+${JSON.stringify(
+      questions.map((q) => ({
+        question: q.question,
+        expectedAnswer: q.expectedAnswer,
+        candidateAnswer: cleanedAnswers.find((a) => a.question === q.question)?.answer || '',
+      })),
+      null,
+      2
+    )}`;
+
+    const generated = await this.generateWithGeminiThenFallback(prompt);
+    const text = generated.text.trim();
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No valid JSON found in grading response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const perQuestion = Array.isArray(parsed.perQuestion) ? parsed.perQuestion : [];
+    const totalScore = typeof parsed.totalScore === 'number' ? parsed.totalScore : 0;
+    const overallFeedback = parsed.overallFeedback || '';
+
+    return {
+      totalScore,
+      perQuestion,
+      overallFeedback,
+      provider: generated.provider,
+      model: generated.model,
+    };
+  }
 }
 
 export const geminiService = new GeminiService();

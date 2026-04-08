@@ -23,26 +23,35 @@ export class ApplicantController {
         throw error;
       }
 
-      const fileType = fileService.detectFileType(file.originalname);
-      if (!fileType) {
+      const validatedType = (req as any).validatedFileType as string | undefined;
+      const detectedType = fileService.detectFileType(file.originalname);
+      const resolvedType =
+        detectedType ||
+        (validatedType === 'csv' ? 'csv' : null) ||
+        (validatedType?.includes('sheet') ? 'excel' : null) ||
+        (validatedType === 'application/pdf' ? 'pdf' : null);
+
+      if (!resolvedType) {
         const error: APIError = new Error('Unsupported file type');
         error.statusCode = 400;
         error.code = 'VALIDATION_ERROR';
         throw error;
       }
 
-      const applicants = await applicantService.uploadFromFile(
+      const result = await applicantService.uploadFromFile(
         jobId,
         file.buffer,
-        fileType,
+        resolvedType as any,
         file.originalname
       );
 
       res.status(201).json({
         success: true,
-        data: applicants,
+        data: result.applicants,
         meta: {
-          count: applicants.length,
+          count: result.applicants.length,
+          parsed: result.stats.parsed,
+          duplicates: result.stats.duplicates,
           timestamp: new Date().toISOString(),
         },
       });
