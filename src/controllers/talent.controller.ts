@@ -310,9 +310,12 @@ export class TalentController {
         .populate('jobId', 'title company employmentType workMode requirements status createdAt')
         .sort({ appliedAt: -1 });
 
+      // Filter out applications whose job was deleted (populate returns null for missing refs)
+      const validApplications = applications.filter((app) => app.jobId != null);
+
       res.json({
         success: true,
-        data: applications,
+        data: validApplications,
       });
     } catch (error) {
       next(error);
@@ -342,24 +345,22 @@ export class TalentController {
       let cvText = '';
       try {
         const parsed = await fileService.parseFile(buffer, fileType, fileName);
-        if (parsed.length > 0) {
-          const p = parsed[0] as any;
-          // Prefer raw PDF text — it contains proper section headers Gemini/text-parser can use
-          if (p.rawText && p.rawText.trim().length > 50) {
-            cvText = p.rawText.slice(0, 8000);
-          } else {
-            // CSV / Excel: reconstruct from structured fields
-            cvText = [
-              p.name,
-              p.summary,
-              p.skills?.length ? 'Skills\n' + p.skills.join('\n') : '',
-              p.experience?.length ? 'Experience\n' + p.experience.map((e: any) =>
-                `${e.title} at ${e.company}\n${e.duration}\n${e.description || ''}`).join('\n\n') : '',
-              p.education?.length ? 'Education\n' + p.education.map((e: any) =>
-                `${e.degree}\n${e.institution}\n${e.year}`).join('\n\n') : '',
-            ].filter(Boolean).join('\n\n');
-          }
+      if (parsed.length > 0) {
+        const p = parsed[0] as any;
+        if (p.rawText && p.rawText.trim().length > 50) {
+          cvText = p.rawText.slice(0, 8000);
+        } else {
+          cvText = [
+            p.name,
+            p.summary,
+            p.skills?.length ? 'Skills\n' + p.skills.join('\n') : '',
+            p.experience?.length ? 'Experience\n' + p.experience.map((e: any) =>
+              `${e.title} at ${e.company}\n${e.duration}\n${e.description || ''}`).join('\n\n') : '',
+            p.education?.length ? 'Education\n' + p.education.map((e: any) =>
+              `${e.degree}\n${e.institution}\n${e.year}`).join('\n\n') : '',
+          ].filter(Boolean).join('\n\n');
         }
+      }
       } catch (parseErr: any) {
         // Fallback: read buffer as UTF-8 text
         cvText = buffer.toString('utf-8').slice(0, 8000);
@@ -385,23 +386,60 @@ export class TalentController {
 
       // Step 3: Build the $set update — only overwrite fields that were found
       // Filter arrays to only include entries with all required fields to avoid Mongoose validation errors
-      const validExperience = (extracted.experience || []).filter(
-        (e: any) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
+      const validExperience = (extracted.experience || []).map((entry) => ({
+        title: entry.title,
+        company: entry.company,
+        duration: entry.duration,
+        description: entry.description,
+        startDate: entry.startDate,
+        endDate: entry.endDate,
+        technologies: entry.technologies || [],
+        isCurrent: entry.isCurrent || false,
+      })).filter(
+        (e) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
       );
-      const validEducation = (extracted.education || []).filter(
-        (e: any) => (e.degree?.trim() || e.institution?.trim())
+      const validEducation = (extracted.education || []).map((entry) => ({
+        degree: entry.degree,
+        institution: entry.institution,
+        fieldOfStudy: entry.fieldOfStudy,
+        startYear: entry.startYear,
+        endYear: entry.endYear,
+      })).filter(
+        (e) => (e.degree?.trim() || e.institution?.trim())
       );
+
+      const skillEntries = (extracted.skills || []).map((name) => ({
+        name,
+        level: 'Intermediate' as const,
+      }));
+
+      const languageEntries = (extracted.languages || []).map((name) => ({
+        name,
+        proficiency: 'Conversational' as const,
+      }));
 
       const setFields: Record<string, any> = {};
 
-      if (extracted.name)     setFields['profile.name']     = extracted.name;
-      if (extracted.position) setFields['profile.position'] = extracted.position;
-      if (extracted.bio)      setFields['profile.bio']      = extracted.bio.slice(0, 500);
-      if (extracted.phone)    setFields['profile.phone']    = extracted.phone;
-      if (extracted.skills?.length)    setFields['profile.skills']     = extracted.skills;
-      if (extracted.languages?.length) setFields['profile.languages']  = extracted.languages;
-      if (validExperience.length)      setFields['profile.experience'] = validExperience;
-      if (validEducation.length)       setFields['profile.education']  = validEducation;
+      if (extracted.name) {
+        setFields['profile.name'] = extracted.name;
+        const parts = extracted.name.split(/\s+/).filter(Boolean);
+        if (parts.length > 0) {
+          setFields['profile.firstName'] = parts[0];
+          if (parts.length > 1) {
+            setFields['profile.lastName'] = parts.slice(1).join(' ');
+          }
+        }
+      }
+      if (extracted.position) {
+        setFields['profile.position'] = extracted.position;
+        setFields['profile.headline'] = extracted.position;
+      }
+      if (extracted.bio) setFields['profile.bio'] = extracted.bio.slice(0, 500);
+      if (extracted.phone) setFields['profile.phone'] = extracted.phone;
+      if (skillEntries.length) setFields['profile.skills'] = skillEntries;
+      if (languageEntries.length) setFields['profile.languages'] = languageEntries;
+      if (validExperience.length) setFields['profile.experience'] = validExperience;
+      if (validEducation.length) setFields['profile.education'] = validEducation;
 
       // Calculate new profile completion
       const completion = [

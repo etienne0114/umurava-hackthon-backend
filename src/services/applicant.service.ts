@@ -39,7 +39,18 @@ export class ApplicantService {
             profile: {
               name: profile.name,
               email: profile.email,
-              skills: profile.skills,
+              skills: (profile.skills || [])
+                .filter(Boolean)
+                .map((skill) => ({
+                  name: skill,
+                  level: 'Intermediate' as const,
+                })),
+              languages: (profile.languages || [])
+                .filter(Boolean)
+                .map((language) => ({
+                  name: language,
+                  proficiency: 'Conversational' as const,
+                })),
               experience: profile.experience,
               education: profile.education,
               summary: profile.portfolio,
@@ -94,7 +105,12 @@ export class ApplicantService {
               name: parsed.name,
               email: parsed.email,
               phone: parsed.phone,
-              skills: parsed.skills,
+              skills: (parsed.skills || [])
+                .filter(Boolean)
+                .map((skill) => ({
+                  name: skill,
+                  level: 'Intermediate' as const,
+                })),
               experience: parsed.experience,
               education: parsed.education,
               summary: parsed.summary,

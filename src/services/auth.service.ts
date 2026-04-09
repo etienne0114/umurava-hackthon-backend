@@ -7,6 +7,10 @@ export interface RegisterData {
   password: string;
   role: UserRole;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  headline?: string;
+  location?: string;
   phone?: string;
   company?: string;
   position?: string;
@@ -38,12 +42,20 @@ export class AuthService {
         throw new Error('Email already registered');
       }
 
+      const nameParts = data.name.trim().split(/\s+/).filter(Boolean);
+      const firstName = data.firstName || nameParts[0] || '';
+      const lastName = data.lastName || nameParts.slice(1).join(' ') || '';
+
       const user = new User({
         email: data.email,
         password: data.password,
         role: data.role,
         profile: {
           name: data.name,
+          firstName,
+          lastName,
+          headline: data.headline,
+          location: data.location,
           phone: data.phone,
           company: data.company,
           position: data.position,
@@ -113,22 +125,42 @@ export class AuthService {
 
   async updateProfile(userId: string, updates: Partial<IUser['profile']>): Promise<IUser> {
     try {
-      // Merge individual profile fields instead of replacing the entire object
-      const setFields: Record<string, any> = {};
-      for (const [key, value] of Object.entries(updates)) {
-        // Filter out experience/education entries that are entirely blank to avoid DB noise
-        if (key === 'experience' && Array.isArray(value)) {
-          setFields[`profile.${key}`] = (value as any[]).filter(
-            (e) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
-          );
-        } else if (key === 'education' && Array.isArray(value)) {
-          setFields[`profile.${key}`] = (value as any[]).filter(
-            (e) => e.degree?.trim() || e.institution?.trim()
-          );
-        } else {
-          setFields[`profile.${key}`] = value;
-        }
+    // Merge individual profile fields without overwriting the entire object
+    const sanitizers: Record<string, (value: any) => any> = {
+      experience: (value: any[]) =>
+        value.filter(
+          (e) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
+        ),
+      education: (value: any[]) =>
+        value.filter((e) => e.degree?.trim() || e.institution?.trim()),
+      skills: (value: any[]) => value.filter((skill) => skill?.name?.trim()),
+      languages: (value: any[]) => value.filter((lang) => lang?.name?.trim()),
+      certifications: (value: any[]) =>
+        value.filter((cert) => cert?.name?.trim() && cert?.issuer?.trim()),
+      projects: (value: any[]) => value.filter((proj) => proj?.name?.trim()),
+    };
+
+    const setFields: Record<string, any> = {};
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined) continue;
+
+      if (key in sanitizers && Array.isArray(value)) {
+        setFields[`profile.${key}`] = sanitizers[key](value);
+        continue;
       }
+
+      if (key === 'availability' && typeof value === 'object' && value !== null) {
+        setFields['profile.availability'] = value;
+        continue;
+      }
+
+      if (key === 'socialLinks' && typeof value === 'object' && value !== null) {
+        setFields['profile.socialLinks'] = value;
+        continue;
+      }
+
+      setFields[`profile.${key}`] = value;
+    }
 
       const user = await User.findByIdAndUpdate(
         userId,

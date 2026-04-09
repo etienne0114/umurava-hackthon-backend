@@ -21,6 +21,19 @@ validateConfig();
 
 const app: Application = express();
 
+if (process.env.NODE_ENV === 'test') {
+  const originalListen = app.listen.bind(app);
+  (app as any).listen = (...args: any[]) => {
+    if (args.length === 0) {
+      return originalListen(0, '127.0.0.1');
+    }
+    if (typeof args[0] === 'number' && typeof args[1] !== 'string') {
+      return originalListen(args[0], '127.0.0.1', ...args.slice(1));
+    }
+    return originalListen(...args);
+  };
+}
+
 // Trust proxy - important for rate limiting and IP tracking behind reverse proxy
 app.set('trust proxy', 1);
 

@@ -8,6 +8,7 @@ export interface UmuravaProfile {
   name: string;
   email: string;
   skills: string[];
+  languages?: string[];
   experience: ExperienceEntry[];
   education: EducationEntry[];
   portfolio?: string;
@@ -84,6 +85,7 @@ export class UmuravaService {
       name: data.name || data.fullName,
       email: data.email,
       skills: data.skills || [],
+      languages: data.languages || [],
       experience: data.experience || [],
       education: data.education || [],
       portfolio: data.portfolio || data.portfolioUrl,

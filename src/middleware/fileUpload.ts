@@ -1,7 +1,8 @@
 import multer from 'multer';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { config } from '../config/environment';
 import logger from '../utils/logger';
+import { fileTypeFromBuffer } from 'file-type';
 
 const storage = multer.memoryStorage();
 
@@ -18,6 +19,16 @@ const ALLOWED_FILE_SIGNATURES: Record<string, string[]> = {
   png: ['image/png'],
 };
 
+const MIME_TO_TYPE: Record<string, string> = {
+  'text/plain': 'csv',
+  'text/csv': 'csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xls',
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+};
+
 /**
  * Verifies that the file content matches its extension using magic numbers.
  */
@@ -25,8 +36,7 @@ export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean
   try {
     // 1. Check for binary magic numbers (images, PDF, Excel) FIRST
     // Using require for absolute robustness in this Node/TS environment
-    const FileType = require('file-type');
-    const detectedType = await FileType.fromBuffer(buffer);
+    const detectedType = await fileTypeFromBuffer(buffer);
 
     if (detectedType) {
       logger.info(`Detected binary magic number: ${detectedType.mime}`);
@@ -38,7 +48,7 @@ export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean
           error: `File type ${detectedType.mime} is not allowed. Only CSV, Excel, PDF, and image files (JPEG, PNG) are accepted.` 
         };
       }
-      return { valid: true, type: detectedType.mime };
+      return { valid: true, type: MIME_TO_TYPE[detectedType.mime] || detectedType.mime };
     }
 
     // 2. ONLY if no binary magic numbers are found, check for plain-text CSV

@@ -27,8 +27,8 @@ const EDU_HEADERS     = /^education(al)?(\s+(background|history|qualifications?)
 const SUMMARY_HEADERS = /^(professional\s+)?(summary|profile|objective|overview|about(\s+me)?)$/i;
 const CONTACT_HEADERS = /^(contact(\s+info(rmation)?)?|personal\s+(details?|info))$/i;
 
-const PHONE_RE      = /(?:\+?\d[\d\s\-().]{7,}\d)/g;
-const EMAIL_RE      = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+const PHONE_RE      = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+const EMAIL_RE      = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const YEAR_RE       = /\b(19|20)\d{2}\b/g;
 const DATE_RANGE_RE = /\b(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s,]*)?(?:19|20)\d{2}\s*[-–—to]+\s*(?:present|current|now|(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s,]*)?(?:19|20)\d{2})/gi;
 
@@ -47,7 +47,7 @@ const NON_SKILL_RE = /linkedin|github|twitter|instagram|facebook|portfolio|websi
  */
 function splitCamelConcat(raw: string): string[] {
   // First split on explicit delimiters
-  const byDelimiters = raw.split(/[,;•·\t\/]+/).map(s => s.trim()).filter(Boolean);
+    const byDelimiters = raw.split(/[,;•·\t/]+/).map(s => s.trim()).filter(Boolean);
 
   const result: string[] = [];
   for (const token of byDelimiters) {
@@ -58,10 +58,10 @@ function splitCamelConcat(raw: string): string[] {
     // Long token with no spaces → try CamelCase split
     // Insert marker before: uppercase following lowercase, or multiple uppercase → single uppercase
     const spaced = token
-      .replace(/([a-z])([A-Z])/g, '$1\x00$2')
-      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1\x00$2');
+      .replace(/([a-z])([A-Z])/g, '$1\u0000$2')
+      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1\u0000$2');
 
-    const parts = spaced.split('\x00').map(s => s.trim()).filter(s => s.length > 1);
+    const parts = spaced.split('\u0000').map(s => s.trim()).filter(s => s.length > 1);
     if (parts.length > 1) {
       result.push(...parts);
     } else {
@@ -105,7 +105,9 @@ type Section = 'none' | 'skills' | 'languages' | 'experience' | 'education' | 's
 
 export function parseResumeText(text: string): ParsedResumeProfile {
   // Normalise line endings and strip zero-width chars
-  const cleaned = text.replace(/\r\n/g, '\n').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
+  const cleaned = text.replace(/\r\n/g, '\n')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F]/g, '');
   const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
 
   // ── Phone ────────────────────────────────────────────────────────────────────
@@ -166,7 +168,7 @@ export function parseResumeText(text: string): ParsedResumeProfile {
     //   a) "React, Node.js, TypeScript"  (comma separated)
     //   b) "ReactTailwindTypeScript"     (concatenated CamelCase — PDF chips)
     //   c) "• React  • Vue.js"           (bullets)
-    const tokens = splitCamelConcat(line);
+      const tokens = splitCamelConcat(line);
     for (const token of tokens) {
       const sub = token.split(/[,;•·|]+/).map(s => cleanSkill(s)).filter(Boolean);
       rawSkills.push(...sub);
@@ -182,7 +184,7 @@ export function parseResumeText(text: string): ParsedResumeProfile {
   for (const line of sectionLines.languages) {
     const tokens = splitCamelConcat(line);
     for (const token of tokens) {
-      const sub = token.split(/[,;•·|\/]+/).map(s => cleanSkill(s)).filter(Boolean);
+      const sub = token.split(/[,;•·|/]+/).map(s => cleanSkill(s)).filter(Boolean);
       rawLangs.push(...sub);
     }
   }

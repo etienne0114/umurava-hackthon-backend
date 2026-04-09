@@ -10,7 +10,19 @@ import logger from '../utils/logger';
 export class AuthController {
   async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { email, password, role, name, phone, company, position } = req.body;
+      const {
+        email,
+        password,
+        role,
+        name,
+        firstName,
+        lastName,
+        headline,
+        location,
+        phone,
+        company,
+        position,
+      } = req.body;
 
       if (!email || !password || !role || !name) {
         const error: APIError = new Error('Email, password, role, and name are required');
@@ -31,6 +43,10 @@ export class AuthController {
         password,
         role,
         name,
+        firstName,
+        lastName,
+        headline,
+        location,
         phone,
         company,
         position,

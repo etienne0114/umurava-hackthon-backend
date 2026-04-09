@@ -21,9 +21,10 @@ export class FileService {
           return await parseCSV(buffer);
         case 'excel':
           return await parseExcel(buffer);
-        case 'pdf':
+        case 'pdf': {
           const parsed = await parsePDF(buffer);
           return [parsed];
+        }
         default:
           throw new Error(`Unsupported file type: ${fileType}`);
       }

@@ -69,8 +69,9 @@ const sanitizeObject = (obj: any): any => {
   }
   
   const sanitized: any = {};
+  const hasOwnProperty = Object.prototype.hasOwnProperty;
   for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
+    if (hasOwnProperty.call(obj, key)) {
       sanitized[key] = sanitizeObject(obj[key]);
     }
   }

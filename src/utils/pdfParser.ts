@@ -11,7 +11,8 @@ export const parsePDF = async (buffer: Buffer): Promise<ParsedApplicant> => {
   } catch (error: any) {
     logger.warn(`pdf-parse failed, falling back to raw text extraction: ${error.message}`);
     // Fallback: try to extract text as UTF-8 string (works for many simple/uncompressed PDFs)
-    text = buffer.toString('utf8').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, ' ');
+    // eslint-disable-next-line no-control-regex
+    text = buffer.toString('utf8').replace(/[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F]/g, ' ');
   }
 
   try {
