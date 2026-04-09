@@ -108,7 +108,6 @@ export class TalentController {
     try {
       const userId = (req as any).user.userId;
       const { type = 'best_match' } = req.query;
-      const { geminiService } = await import('../services/gemini.service');
 
       // Load user
       const user = await User.findById(userId);

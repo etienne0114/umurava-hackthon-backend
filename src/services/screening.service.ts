@@ -3,7 +3,9 @@ import { Job, IJob } from '../models/Job';
 import { Applicant, IApplicant } from '../models/Applicant';
 import { ScreeningSession, IScreeningSession } from '../models/ScreeningSession';
 import { ScreeningResult, IScreeningResult } from '../models/ScreeningResult';
+import { Assessment } from '../models/Assessment';
 import { geminiService, CandidateEvaluation } from './gemini.service';
+import { NotificationController } from '../controllers/notification.controller';
 import { WeightConfig } from '../types';
 import logger from '../utils/logger';
 
@@ -22,12 +24,40 @@ export interface ScreeningOptions {
 }
 
 export class ScreeningService {
+  private readonly BATCH_SIZE = 5;
+
+  private async assertAllAssessmentsCompleted(jobId: string): Promise<void> {
+    const totalAssessments = await Assessment.countDocuments({ jobId });
+    if (totalAssessments === 0) return;
+
+    const pendingAssessments = await Assessment.find({ jobId, status: { $ne: 'completed' } })
+      .select('dueAt')
+      .lean();
+
+    if (pendingAssessments.length === 0) return;
+
+    const dueAtValues = pendingAssessments
+      .map((a: any) => a.dueAt)
+      .filter(Boolean)
+      .map((date: any) => new Date(date as any));
+    const latestDueAt = dueAtValues.length > 0
+      ? new Date(Math.max(...dueAtValues.map((d) => d.getTime())))
+      : null;
+    const dueDateReached = latestDueAt ? new Date() >= latestDueAt : false;
+
+    if (!dueDateReached) {
+      throw new Error('Quick tests are still in progress. Screening unlocks when the test due date is reached or all tests are completed.');
+    }
+  }
+
   async startScreening(jobId: string, options: ScreeningOptions = {}): Promise<IScreeningSession> {
     try {
       const job = await Job.findById(jobId);
       if (!job) {
         throw new Error('Job not found');
       }
+
+      await this.assertAllAssessmentsCompleted(jobId);
 
       const applicants = await Applicant.find(applicantsByJobFilter(jobId));
       if (applicants.length === 0) {
@@ -43,7 +73,13 @@ export class ScreeningService {
         status: 'processing',
         totalApplicants: applicants.length,
         processedApplicants: 0,
-        options: { topN, minScore, weights },
+        options: {
+          topN,
+          minScore,
+          weights,
+          batchMode: applicants.length >= this.BATCH_SIZE,
+          batchSize: this.BATCH_SIZE,
+        },
       });
 
       await session.save();
@@ -70,20 +106,25 @@ export class ScreeningService {
   ): Promise<void> {
     try {
       const evaluations: Array<CandidateEvaluation & { applicantId: string }> = [];
+      const batchSize = this.BATCH_SIZE;
 
-      for (const applicant of applicants) {
+      // Evaluate candidates in small batches for consistency and throughput
+      for (let i = 0; i < applicants.length; i += batchSize) {
+        const batch = applicants.slice(i, i + batchSize);
         try {
-          const evaluation = await geminiService.evaluateCandidate(job, applicant);
-          evaluations.push({
-            ...evaluation,
-            applicantId: applicant._id.toString(),
-          });
-
-          await ScreeningSession.findByIdAndUpdate(sessionId, {
-            $inc: { processedApplicants: 1 },
+          const batchResults = await geminiService.evaluateCandidatesBatch(job, batch);
+          batchResults.forEach((result) => {
+            evaluations.push({
+              ...result.evaluation,
+              applicantId: result.applicantId,
+            });
           });
         } catch (error: any) {
-          logger.error(`Failed to evaluate applicant ${applicant._id}:`, error);
+          logger.error(`Failed to evaluate batch starting at ${i}:`, error);
+        } finally {
+          await ScreeningSession.findByIdAndUpdate(sessionId, {
+            $inc: { processedApplicants: batch.length },
+          });
         }
       }
 
@@ -101,6 +142,7 @@ export class ScreeningService {
           risks: result.risks,
           recommendation: result.recommendation,
           reasoning: result.reasoning,
+          aiFallback: result.aiFallback || false,
         },
         scoreBreakdown: result.scoreBreakdown,
         geminiResponse: result.geminiResponse,
@@ -116,7 +158,6 @@ export class ScreeningService {
       await Job.findByIdAndUpdate(job._id, { screeningStatus: 'completed' });
 
       // Notify the recruiter
-      const { NotificationController } = await import('../controllers/notification.controller');
       if (job.createdBy) {
         await NotificationController.create(
           job.createdBy.toString(),
@@ -181,6 +222,7 @@ export class ScreeningService {
     applicantIds?: string[]
   ): Promise<IScreeningSession> {
     try {
+      await this.assertAllAssessmentsCompleted(jobId);
       if (applicantIds && applicantIds.length > 0) {
         await ScreeningResult.deleteMany({ jobId, applicantId: { $in: applicantIds } });
       } else {

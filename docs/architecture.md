@@ -10,6 +10,34 @@ The platform follows a three-tier architecture:
 2. **Backend Layer**: Node.js + Express REST API
 3. **Data Layer**: MongoDB database + Gemini AI API
 
+## 1-Page Architecture Diagram (ASCII)
+
+```
+┌──────────────────────────────┐        HTTPS        ┌──────────────────────────────┐
+│ Recruiter/Talent (Browser)   │  <--------------->  │ Next.js Frontend (Redux)     │
+└──────────────────────────────┘                     └──────────────┬───────────────┘
+                                                                    │ REST /api
+                                                                    v
+                                                   ┌────────────────────────────────┐
+                                                   │ Node.js + Express Backend       │
+                                                   │ Auth/JWT, Routes, Services      │
+                                                   └──────────────┬─────────────────┘
+                                                                  │
+                     ┌───────────────────────────────┬────────────┼──────────────┬───────────────────────┐
+                     │                               │            │              │                       │
+                     v                               v            v              v                       v
+           ┌─────────────────────┐         ┌────────────────┐  ┌────────────┐  ┌────────────────┐  ┌──────────────────┐
+           │ MongoDB             │         │ Gemini API     │  │ OpenRouter │  │ File Parsing   │  │ Umurava API      │
+           │ Jobs/Applicants/    │         │ (LLM)          │  │ (Fallback) │  │ CSV/Excel/PDF  │  │ Talent Profiles  │
+           │ Results/Notifs      │         └────────────────┘  └────────────┘  └────────────────┘  └──────────────────┘
+           └─────────────────────┘
+
+Key Flows:
+1) Upload CSV/Excel/PDF -> File Parsing -> Applicant records in MongoDB
+2) Screening -> Gemini (batch) -> Ranked Results -> Stored in MongoDB
+3) Notifications -> MongoDB -> Frontend bell dropdown
+```
+
 ## Component Overview
 
 ### Backend Components

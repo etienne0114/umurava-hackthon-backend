@@ -11,7 +11,6 @@ Orchestrating the core intelligence layer using the **Gemini API**. The backend 
 
 ### 2. Multi-Format Applicant Ingestion
 The system supports multiple ingestion streams:
-- **PDF/CSV/Excell Parsing**: Intelligent text extraction and normalization of resume data.
 - **PDF/CSV/Excel Parsing**: Intelligent text extraction and normalization of resume data (PDF resumes supported; CSV/Excel rows are treated as individual applicants).
 - **Umurava Platform Import**: Direct interface with the Umurava talent ecosystem.
 
@@ -35,6 +34,9 @@ The backend follows a strict **Context -> Evaluation -> Scoring -> Ranking** log
 - **[AI Prompt Strategy](./docs/ai-prompt-strategy.md)**
 - **[AI Decision Flow](./docs/ai-decision-flow.md)**
 - **[Database Schema](./docs/database-schema.md)**
+
+### AI Decision Flow Summary
+Job requirements and candidate profiles are sent to Gemini with explicit weightings. The model returns structured scores and reasoning, the backend computes a weighted match score, and candidates are ranked and stored with explainability for recruiter review.
 
 ---
 
@@ -75,12 +77,26 @@ The following internal guides provide complete technical details:
 - **[Full API Reference](./docs/api-documentation.md)**
 - **[Architecture Overview](./docs/architecture.md)**
 - **[Database Schema](./docs/database-schema.md)**
+- **[AI Decision Flow](./docs/ai-decision-flow.md)**
+- **[AI Prompt Strategy](./docs/ai-prompt-strategy.md)**
 
 ---
 
 ## ⚖️ Ethics & Bias Mitigation
 
 To ensure fairness, our AI strategy explicitly instructs the model to ignore demographic indicators and focus strictly on professional competence and objective evidence in candidate profiles.
+
+---
+
+## 👤 Human-in-Control
+AI recommendations are advisory. Recruiters always make the final hiring decision. The system highlights strengths, gaps, and risks to support human judgment rather than replace it.
+
+---
+
+## ✅ Assumptions & Limitations
+- PDF uploads are treated as one candidate per file.
+- CSV/Excel ingestion expects one candidate per row.
+- AI output quality depends on the completeness of job requirements and candidate profiles.
 
 ---
 

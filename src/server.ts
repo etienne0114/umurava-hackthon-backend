@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { config, validateConfig } from './config/environment';
+import { getGeminiModel } from './config/gemini';
 import { connectDatabase } from './config/database';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { 
@@ -84,7 +85,6 @@ app.use((req: Request, _res: Response, next) => {
 
 // Health check endpoint
 app.get('/api/health', async (_req: Request, res: Response) => {
-  const { getGeminiModel } = await import('./config/gemini');
   let geminiStatus = 'ok';
   try {
     const model = getGeminiModel();

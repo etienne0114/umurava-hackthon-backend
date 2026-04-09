@@ -68,6 +68,70 @@ export const buildEvaluationPrompt = (job: IJob, applicant: IApplicant): string 
 IMPORTANT: Provide ONLY the JSON object. Do not include any preamble or postscript.`;
 };
 
+export const buildBatchEvaluationPrompt = (job: IJob, applicants: IApplicant[]): string => {
+  const experienceRange = job.requirements.experience.maxYears
+    ? `${job.requirements.experience.minYears}-${job.requirements.experience.maxYears}`
+    : `${job.requirements.experience.minYears}+`;
+
+  const candidates = applicants.map((applicant) => {
+    const experienceText = applicant.profile.experience
+      .map((exp) => `${exp.title} at ${exp.company} (${exp.duration})`)
+      .join(', ') || 'No experience listed';
+
+    const educationText = applicant.profile.education
+      .map((edu) => `${edu.degree} from ${edu.institution} (${edu.year})`)
+      .join(', ') || 'No education listed';
+
+    return {
+      applicantId: applicant._id.toString(),
+      name: applicant.profile.name,
+      skills: applicant.profile.skills,
+      experience: experienceText,
+      education: educationText,
+      summary: applicant.profile.summary || '',
+    };
+  });
+
+  return `You are an expert recruitment AI assistant specialized in the African tech market. Evaluate multiple candidates in one pass and return JSON ONLY.
+
+### JOB DETAILS:
+- Title: ${job.title}
+- Company: ${job.company || 'Confidential'}
+- Employment Type: ${job.employmentType || 'Full-time'}
+- Work Mode: ${job.workMode || 'Remote'}
+- Description: ${job.description}
+- Required Skills: ${job.requirements.skills}
+- Experience Required: ${experienceRange} years
+- Education Required: ${job.requirements.education.join(', ') || 'Not specified'}
+
+### EVALUATION CRITERIA (Weighted):
+- Skills Match (${job.weights.skills * 100}%)
+- Experience Match (${job.weights.experience * 100}%)
+- Education Match (${job.weights.education * 100}%)
+- Overall Relevance (${job.weights.relevance * 100}%)
+
+### CANDIDATES (JSON):
+${JSON.stringify(candidates, null, 2)}
+
+### OUTPUT FORMAT (JSON ARRAY ONLY):
+[
+  {
+    "applicantId": "string",
+    "skillsScore": 0-100,
+    "experienceScore": 0-100,
+    "educationScore": 0-100,
+    "relevanceScore": 0-100,
+    "strengths": ["..."],
+    "gaps": ["..."],
+    "risks": ["..."],
+    "recommendation": "highly_recommended|recommended|consider|not_recommended",
+    "reasoning": "At least 80 words, evidence-based."
+  }
+]
+
+IMPORTANT: Return ONLY the JSON array, no markdown or extra text.`;
+};
+
 export interface GeminiEvaluationResponse {
   skillsScore: number;
   experienceScore: number;

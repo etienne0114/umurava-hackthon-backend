@@ -14,9 +14,34 @@ export class AssessmentController {
     return {
       ...obj,
       questions: Array.isArray(obj.questions)
-        ? obj.questions.map((q: any) => ({ question: q.question }))
+        ? obj.questions.map((q: any) => ({ question: q.question, options: q.options }))
         : [],
     };
+  }
+
+  private normalizeQuestions(questions: any[]) {
+    return questions
+      .map((q) => {
+        const options = Array.isArray(q?.options)
+          ? q.options.map((opt: any) => String(opt).trim()).filter(Boolean)
+          : [];
+        const correctOptionIndex = Number.isInteger(q?.correctOptionIndex) ? q.correctOptionIndex : -1;
+        const expectedAnswerRaw = String(q?.expectedAnswer || '').trim();
+        const expectedAnswer = expectedAnswerRaw || (options[correctOptionIndex] || '');
+        return {
+          question: String(q?.question || '').trim(),
+          options,
+          correctOptionIndex,
+          expectedAnswer,
+        };
+      })
+      .filter((q) => q.question && q.options.length === 4 && q.correctOptionIndex >= 0 && q.correctOptionIndex < 4);
+  }
+
+  private getAssessmentDueAt(now: Date = new Date()) {
+    const due = new Date(now.getTime());
+    due.setDate(due.getDate() + 3);
+    return due;
   }
 
 
@@ -45,13 +70,22 @@ export class AssessmentController {
 
       logger.info(`Generating AI assessment for applicant ${applicantId} [Job: ${jobId}]`);
       const questions = await geminiService.generateTechnicalTest(job, applicant);
+      if (!questions.length) {
+        return res.status(500).json({ success: false, message: 'AI failed to generate multiple-choice questions' });
+      }
       const talentUserId = await resolveTalentUserIdForApplicant(applicant);
+      const timePerQuestionSeconds = 60;
+      const timeLimitSeconds = questions.length * timePerQuestionSeconds;
+      const dueAt = this.getAssessmentDueAt();
 
       const assessment = await Assessment.create({
         jobId,
         applicantId,
         talentUserId,
         questions,
+        timePerQuestionSeconds,
+        timeLimitSeconds,
+        dueAt,
         status: 'pending',
       });
 
@@ -115,12 +149,56 @@ export class AssessmentController {
   }
 
   /**
+   * Get assessment completion status for a job (company view).
+   */
+  async getJobAssessmentStatus(req: Request, res: Response) {
+    try {
+      const { jobId } = req.params;
+      if (!jobId) {
+        return res.status(400).json({ success: false, message: 'Job ID is required' });
+      }
+
+      const total = await Assessment.countDocuments({ jobId });
+      const completed = await Assessment.countDocuments({ jobId, status: 'completed' });
+      const pending = await Assessment.countDocuments({ jobId, status: { $ne: 'completed' } });
+      const pendingAssessments = await Assessment.find({ jobId, status: { $ne: 'completed' } })
+        .select('dueAt')
+        .lean();
+      const now = new Date();
+      const dueAtValues = pendingAssessments
+        .map((a: any) => a.dueAt)
+        .filter(Boolean)
+        .map((date: any) => new Date(date as any));
+      const latestDueAt = dueAtValues.length > 0
+        ? new Date(Math.max(...dueAtValues.map((d) => d.getTime())))
+        : null;
+      const dueDateReached = latestDueAt ? now >= latestDueAt : true;
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          total,
+          completed,
+          pending,
+          allCompleted: total > 0 && pending === 0,
+          latestDueAt,
+          dueDateReached,
+          canScreen: total === 0 ? true : pending === 0 || dueDateReached,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error in getJobAssessmentStatus:', error);
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  /**
    * Confirm that the test has been sent (updates applicant status)
    */
   async confirmSent(req: Request, res: Response) {
     try {
       const { applicantId } = req.params;
-      const { questions, jobId } = req.body;
+      const { questions, jobId, dueAt } = req.body;
       const existingApplicant = await Applicant.findById(applicantId);
       const resolvedTalentUserId = existingApplicant
         ? await resolveTalentUserIdForApplicant(existingApplicant)
@@ -128,7 +206,24 @@ export class AssessmentController {
 
       // If recruiter edited questions, save them now
       if (questions && Array.isArray(questions) && jobId) {
-        const questionUpdate: any = { $set: { questions } };
+        const normalized = this.normalizeQuestions(questions);
+        if (normalized.length === 0) {
+          return res.status(400).json({ success: false, message: 'Each question must include 4 options and a correct option.' });
+        }
+        const timePerQuestionSeconds = 60;
+        const timeLimitSeconds = normalized.length * timePerQuestionSeconds;
+        const questionUpdate: any = {
+          $set: { questions: normalized, timePerQuestionSeconds, timeLimitSeconds },
+        };
+        if (!existingApplicant?.assessmentStatus || existingApplicant.assessmentStatus !== 'completed') {
+          questionUpdate.$set.dueAt = this.getAssessmentDueAt();
+        }
+        if (dueAt) {
+          const parsedDueAt = new Date(dueAt);
+          if (!Number.isNaN(parsedDueAt.getTime()) && parsedDueAt.getTime() > Date.now()) {
+            questionUpdate.$set.dueAt = parsedDueAt;
+          }
+        }
         if (resolvedTalentUserId) {
           questionUpdate.$set.talentUserId = resolvedTalentUserId;
         }
@@ -218,14 +313,28 @@ export class AssessmentController {
           if (!assessment) {
             // Generate new assessment using Gemini
             const questions = await geminiService.generateTechnicalTest(job, applicant);
+            if (!questions.length) {
+              throw new Error('AI failed to generate multiple-choice questions');
+            }
             const resolvedTalentUserId = await resolveTalentUserIdForApplicant(applicant);
+            const timePerQuestionSeconds = 60;
+            const timeLimitSeconds = questions.length * timePerQuestionSeconds;
+            const dueAt = this.getAssessmentDueAt();
             assessment = await Assessment.create({
               jobId,
               applicantId,
               talentUserId: resolvedTalentUserId,
               questions,
+              timePerQuestionSeconds,
+              timeLimitSeconds,
+              dueAt,
               status: 'pending',
             });
+          } else if (!assessment.timeLimitSeconds) {
+            const timePerQuestionSeconds = assessment.timePerQuestionSeconds || 60;
+            assessment.timePerQuestionSeconds = timePerQuestionSeconds;
+            assessment.timeLimitSeconds = (assessment.questions?.length || 0) * timePerQuestionSeconds;
+            await assessment.save();
           } else if (!assessment.talentUserId) {
             const resolvedTalentUserId = await resolveTalentUserIdForApplicant(applicant);
             if (resolvedTalentUserId) {
@@ -325,19 +434,99 @@ export class AssessmentController {
   }
 
   /**
+   * Start a talent's assessment timer (idempotent).
+   */
+  async startMyAssessment(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.userId;
+      const { assessmentId } = req.params;
+
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+
+      const assessment = await Assessment.findById(assessmentId);
+      if (!assessment) {
+        return res.status(404).json({ success: false, message: 'Assessment not found' });
+      }
+
+      const applicant = await Applicant.findById(assessment.applicantId);
+      if (!applicant) {
+        return res.status(404).json({ success: false, message: 'Applicant not found' });
+      }
+
+      const user = await User.findById(userId).select('email');
+      const ownsByAssessmentUser = assessment.talentUserId?.toString() === userId;
+      const ownsByApplicant =
+        String(applicant.sourceId || '') === userId ||
+        (!!user?.email && applicant.profile.email?.toLowerCase() === user.email.toLowerCase());
+
+      if (!ownsByAssessmentUser && !ownsByApplicant) {
+        return res.status(403).json({ success: false, message: 'You are not allowed to start this assessment' });
+      }
+
+      if (!assessment.timePerQuestionSeconds) {
+        assessment.timePerQuestionSeconds = 60;
+      }
+      if (!assessment.timeLimitSeconds) {
+        assessment.timeLimitSeconds = assessment.questions.length * assessment.timePerQuestionSeconds;
+      }
+      if (!assessment.dueAt) {
+        assessment.dueAt = this.getAssessmentDueAt();
+      }
+
+      if (assessment.status === 'completed') {
+        return res.status(200).json({
+          success: true,
+          data: {
+            startedAt: assessment.startedAt,
+            timeLimitSeconds: assessment.timeLimitSeconds,
+            timePerQuestionSeconds: assessment.timePerQuestionSeconds,
+            timedOut: assessment.timedOut || false,
+          },
+        });
+      }
+
+      if (!assessment.startedAt) {
+        assessment.startedAt = new Date();
+      }
+
+      const deadline = new Date(assessment.startedAt.getTime() + assessment.timeLimitSeconds * 1000);
+      if (new Date() > deadline) {
+        assessment.timedOut = true;
+      }
+
+      await assessment.save();
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          startedAt: assessment.startedAt,
+          timeLimitSeconds: assessment.timeLimitSeconds,
+          timePerQuestionSeconds: assessment.timePerQuestionSeconds,
+          timedOut: assessment.timedOut || false,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error in startMyAssessment:', error);
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  /**
    * Submit answers for a talent's assigned assessment.
    */
   async submitMyAssessment(req: Request, res: Response) {
     try {
       const userId = (req as any).user?.userId;
       const { assessmentId } = req.params;
-      const { answers } = req.body;
+      const { answers, autoSubmit } = req.body;
 
       if (!userId) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
       }
 
-      if (!Array.isArray(answers) || answers.length === 0) {
+      if (!Array.isArray(answers)) {
         return res.status(400).json({ success: false, message: 'Answers array is required' });
       }
 
@@ -365,20 +554,49 @@ export class AssessmentController {
         return res.status(403).json({ success: false, message: 'You are not allowed to submit this assessment' });
       }
 
-      const cleanedAnswers = answers
-        .map((item: any) => ({
-          question: String(item?.question || '').trim(),
-          answer: String(item?.answer || '').trim(),
-        }))
-        .filter((item: any) => item.question && item.answer);
+      const normalizedAnswers = assessment.questions.map((q: any) => {
+        const provided = answers.find((item: any) => String(item?.question || '').trim() === q.question);
+        const selectedIndex = Number.isInteger(provided?.selectedOptionIndex)
+          ? Number(provided?.selectedOptionIndex)
+          : undefined;
+        const answerText =
+          typeof provided?.answer === 'string'
+            ? provided.answer.trim()
+            : Number.isInteger(selectedIndex) && Array.isArray(q.options)
+            ? String(q.options[selectedIndex] || '').trim()
+            : '';
+        return {
+          question: q.question,
+          answer: answerText,
+          selectedOptionIndex: Number.isInteger(selectedIndex) ? selectedIndex : undefined,
+        };
+      });
 
-      if (cleanedAnswers.length === 0) {
-        return res.status(400).json({ success: false, message: 'At least one non-empty answer is required' });
+      if (!autoSubmit) {
+        const hasEmpty = normalizedAnswers.some((item) => !item.answer);
+        if (hasEmpty) {
+          return res.status(400).json({ success: false, message: 'Please answer all questions before submitting' });
+        }
       }
 
-      assessment.candidateAnswers = cleanedAnswers;
+      const now = new Date();
+      if (!assessment.startedAt) {
+        assessment.startedAt = now;
+      }
+      if (!assessment.timeLimitSeconds) {
+        assessment.timePerQuestionSeconds = assessment.timePerQuestionSeconds || 60;
+        assessment.timeLimitSeconds = assessment.questions.length * (assessment.timePerQuestionSeconds || 60);
+      }
+      const deadline = assessment.startedAt && assessment.timeLimitSeconds
+        ? new Date(assessment.startedAt.getTime() + assessment.timeLimitSeconds * 1000)
+        : null;
+      if (deadline && now > deadline) {
+        assessment.timedOut = true;
+      }
+
+      assessment.candidateAnswers = normalizedAnswers;
       assessment.status = 'completed';
-      assessment.submittedAt = new Date();
+      assessment.submittedAt = now;
       if (!assessment.talentUserId) {
         assessment.talentUserId = userId as any;
       }
@@ -391,7 +609,7 @@ export class AssessmentController {
             job,
             applicant,
             assessment.questions,
-            cleanedAnswers
+            normalizedAnswers
           );
         }
       } catch (gradingError: any) {
