@@ -1,9 +1,10 @@
-import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
+﻿import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
 import { generateWithOpenRouter, isOpenRouterConfigured } from '../config/openrouter';
 import { IJob } from '../models/Job';
 import { IApplicant } from '../models/Applicant';
 import {
   buildEvaluationPrompt,
+  buildBatchEvaluationPrompt,
   parseGeminiResponse,
   calculateMatchScore,
 } from '../utils/promptBuilder';
@@ -17,6 +18,7 @@ export interface CandidateEvaluation {
   risks: string[];
   recommendation: Recommendation;
   reasoning: string;
+  aiFallback?: boolean;
   scoreBreakdown: {
     skills: number;
     experience: number;
@@ -27,6 +29,19 @@ export interface CandidateEvaluation {
     rawResponse: string;
     model: string;
   };
+}
+
+interface BatchEvaluationItem {
+  applicantId: string;
+  skillsScore: number;
+  experienceScore: number;
+  educationScore: number;
+  relevanceScore: number;
+  strengths: string[];
+  gaps: string[];
+  risks: string[];
+  recommendation: Recommendation;
+  reasoning: string;
 }
 
 export interface ParsedResumeProfile {
@@ -131,7 +146,7 @@ export class GeminiService {
 
       const reasoning = isQuotaExceeded
         ? 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure screening completes. Please regenerate in 1-2 minutes for accurate scores.'
-        : `Gemini evaluation encountered an issue (${error.message}). A neutral score has been assigned — please regenerate screening for accurate results.`;
+        : `Gemini evaluation encountered an issue (${error.message}). A neutral score has been assigned - please regenerate screening for accurate results.`;
 
       logger.warn(`AI provider fallback failed for candidate ${applicant._id}: ${error.message}`);
       return {
@@ -141,6 +156,7 @@ export class GeminiService {
         risks: [],
         recommendation: 'consider' as Recommendation,
         reasoning,
+        aiFallback: true,
         scoreBreakdown: { skills: 50, experience: 50, education: 50, relevance: 50 },
       };
     }
@@ -160,6 +176,7 @@ export class GeminiService {
       relevance: parsed.relevanceScore,
     };
 
+    // Weighted scoring based on recruiter-defined strategy
     const matchScore = calculateMatchScore(scoreBreakdown, job.weights);
 
     return {
@@ -169,12 +186,106 @@ export class GeminiService {
       risks: parsed.risks,
       recommendation: parsed.recommendation,
       reasoning: parsed.reasoning,
+      aiFallback: false,
       scoreBreakdown,
       geminiResponse: {
         rawResponse: text,
         model: generated.model,
       },
     };
+  }
+
+  private parseBatchResponse(text: string): BatchEvaluationItem[] {
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error('No JSON array found in batch evaluation response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Batch evaluation response is not an array');
+    }
+
+    return parsed
+      .filter((item) => item && typeof item.applicantId === 'string')
+      .map((item) => ({
+        applicantId: item.applicantId,
+        skillsScore: Math.max(0, Math.min(100, Number(item.skillsScore) || 0)),
+        experienceScore: Math.max(0, Math.min(100, Number(item.experienceScore) || 0)),
+        educationScore: Math.max(0, Math.min(100, Number(item.educationScore) || 0)),
+        relevanceScore: Math.max(0, Math.min(100, Number(item.relevanceScore) || 0)),
+        strengths: Array.isArray(item.strengths) ? item.strengths : [],
+        gaps: Array.isArray(item.gaps) ? item.gaps : [],
+        risks: Array.isArray(item.risks) ? item.risks : [],
+        recommendation: item.recommendation || 'consider',
+        reasoning: item.reasoning || '',
+      }));
+  }
+
+  async evaluateCandidatesBatch(
+    job: IJob,
+    applicants: IApplicant[]
+  ): Promise<Array<{ applicantId: string; evaluation: CandidateEvaluation }>> {
+    if (applicants.length === 0) return [];
+
+    try {
+      const prompt = buildBatchEvaluationPrompt(job, applicants);
+      const generated = await geminiRateLimiter.execute(async () => {
+        return await retryWithBackoff(async () => {
+          return await this.generateWithGeminiThenFallback(prompt);
+        }, 3, 1000);
+      });
+
+      // Parse batch JSON and map each item back to its applicantId
+      const batchItems = this.parseBatchResponse(generated.text);
+      const byId = new Map(batchItems.map((item) => [item.applicantId, item]));
+
+      const results: Array<{ applicantId: string; evaluation: CandidateEvaluation }> = [];
+
+      for (const applicant of applicants) {
+        const item = byId.get(applicant._id.toString());
+        if (!item) {
+          const fallback = await this.evaluateCandidate(job, applicant);
+          results.push({ applicantId: applicant._id.toString(), evaluation: fallback });
+          continue;
+        }
+
+        const scoreBreakdown = {
+          skills: item.skillsScore,
+          experience: item.experienceScore,
+          education: item.educationScore,
+          relevance: item.relevanceScore,
+        };
+
+        results.push({
+          applicantId: applicant._id.toString(),
+          evaluation: {
+            matchScore: calculateMatchScore(scoreBreakdown, job.weights),
+            strengths: item.strengths,
+            gaps: item.gaps,
+            risks: item.risks,
+            recommendation: item.recommendation,
+            reasoning: item.reasoning,
+            aiFallback: false,
+            scoreBreakdown,
+            geminiResponse: {
+              rawResponse: generated.text,
+              model: generated.model,
+            },
+          },
+        });
+      }
+
+      return results;
+    } catch (error: any) {
+      logger.warn(`Batch evaluation failed, falling back to per-candidate: ${error.message}`);
+      const results: Array<{ applicantId: string; evaluation: CandidateEvaluation }> = [];
+      for (const applicant of applicants) {
+        const evaluation = await this.evaluateCandidate(job, applicant);
+        results.push({ applicantId: applicant._id.toString(), evaluation });
+      }
+      return results;
+    }
   }
 
   async parseResume(cvText: string): Promise<ParsedResumeProfile> {
@@ -263,7 +374,10 @@ ${cvText.slice(0, 8000)}
     return evaluations;
   }
 
-  async generateTechnicalTest(job: IJob, applicant: IApplicant): Promise<Array<{ question: string; expectedAnswer: string }>> {
+  async generateTechnicalTest(
+    job: IJob,
+    applicant: IApplicant
+  ): Promise<Array<{ question: string; options: string[]; correctOptionIndex: number; expectedAnswer: string }>> {
     try {
       return await geminiRateLimiter.execute(async () => {
         return await retryWithBackoff(async () => {
@@ -273,7 +387,7 @@ ${cvText.slice(0, 8000)}
           const jobSkills = stripHtml(job.requirements.skills);
           const jobDescription = stripHtml(job.description).slice(0, 2000);
           const experienceRange = job.requirements.experience.maxYears
-            ? `${job.requirements.experience.minYears}–${job.requirements.experience.maxYears} years`
+            ? `${job.requirements.experience.minYears}-${job.requirements.experience.maxYears} years`
             : `${job.requirements.experience.minYears}+ years`;
           const educationReqs = job.requirements.education.join(', ') || 'Not specified';
           const candidateExperience = applicant.profile.experience
@@ -297,20 +411,26 @@ Their Experience: ${candidateExperience}
 Their Summary: ${applicant.profile.summary || 'Not provided'}
 
 === YOUR TASK ===
-Generate exactly 7 interview questions to screen this candidate for the "${job.title}" role.
+Generate exactly 10 multiple-choice questions (MCQs) to screen this candidate for the "${job.title}" role.
 
-STRICT RULES — follow every one:
-1. BASE EVERY QUESTION on the JOB REQUIREMENTS above — not on generic interview templates.
+STRICT RULES - follow every one:
+1. BASE EVERY QUESTION on the JOB REQUIREMENTS above - not on generic interview templates.
 2. Each question must test a DIFFERENT aspect listed in the job requirements (vary: technical depth, problem-solving, tools/systems knowledge, situational judgment, domain expertise).
-3. Questions must be SCENARIO-BASED or PRACTICAL — no "what is X" definitions.
+3. Questions must be SCENARIO-BASED or PRACTICAL - no "what is X" definitions.
 4. If the candidate's experience or skills overlap with job requirements, probe for depth and real evidence.
 5. If the candidate lacks a requirement, create a question that would reveal that gap.
-6. NO duplicate or paraphrased questions — each must test something distinct.
-7. expectedAnswer: describe 2–3 concrete points that a strong answer must include.
+6. NO duplicate or paraphrased questions - each must test something distinct.
+7. Each question must have exactly 4 options. Only one option is correct.
+8. expectedAnswer should briefly justify why the correct option is best (1-2 sentences).
 
-Return ONLY a valid JSON array — no markdown fences, no extra text:
+Return ONLY a valid JSON array - no markdown fences, no extra text:
 [
-  { "question": "...", "expectedAnswer": "..." }
+  {
+    "question": "...",
+    "options": ["A", "B", "C", "D"],
+    "correctOptionIndex": 0,
+    "expectedAnswer": "Short explanation"
+  }
 ]`;
 
           const generated = await this.generateWithGeminiThenFallback(prompt);
@@ -324,7 +444,22 @@ Return ONLY a valid JSON array — no markdown fences, no extra text:
             throw new Error('Gemini returned empty or invalid question array');
           }
 
-          return parsed;
+          const normalized = parsed
+            .map((item) => ({
+              question: String(item?.question || '').trim(),
+              options: Array.isArray(item?.options)
+                ? item.options.map((opt: any) => String(opt).trim()).filter(Boolean)
+                : [],
+              correctOptionIndex: Number.isInteger(item?.correctOptionIndex) ? item.correctOptionIndex : -1,
+              expectedAnswer: String(item?.expectedAnswer || '').trim(),
+            }))
+            .filter((item) => item.question && item.options.length === 4 && item.correctOptionIndex >= 0);
+
+          if (normalized.length < 5) {
+            throw new Error('Gemini returned too few valid multiple-choice questions');
+          }
+
+          return normalized.slice(0, 10);
         }, 3, 1000);
       });
     } catch (error: any) {
@@ -336,8 +471,8 @@ Return ONLY a valid JSON array — no markdown fences, no extra text:
   async gradeTechnicalTest(
     job: IJob,
     applicant: IApplicant,
-    questions: Array<{ question: string; expectedAnswer: string }>,
-    answers: Array<{ question: string; answer: string }>
+    questions: Array<{ question: string; options: string[]; correctOptionIndex: number; expectedAnswer: string }>,
+    answers: Array<{ question: string; answer: string; selectedOptionIndex?: number }>
   ): Promise<{
     totalScore: number;
     perQuestion: Array<{ question: string; score: number; feedback: string }>;
@@ -348,14 +483,15 @@ Return ONLY a valid JSON array — no markdown fences, no extra text:
     const cleanedAnswers = answers.map((a) => ({
       question: a.question,
       answer: a.answer,
+      selectedOptionIndex: a.selectedOptionIndex,
     }));
 
-    const prompt = `You are an expert technical interviewer. Score the candidate's answers against the expected answers.
+    const prompt = `You are an expert technical interviewer. Score the candidate's MCQ answers.
 
 Job Title: ${job.title}
 Candidate: ${applicant.profile.name}
 
-You will receive a list of questions with expected answers and the candidate's answers.
+You will receive a list of MCQs with options, the correct option index, and the candidate's selected answer.
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -376,6 +512,8 @@ DATA:
 ${JSON.stringify(
       questions.map((q) => ({
         question: q.question,
+        options: Array.isArray(q.options) ? q.options : [],
+        correctOptionIndex: q.correctOptionIndex,
         expectedAnswer: q.expectedAnswer,
         candidateAnswer: cleanedAnswers.find((a) => a.question === q.question)?.answer || '',
       })),
@@ -407,3 +545,5 @@ ${JSON.stringify(
 }
 
 export const geminiService = new GeminiService();
+
+

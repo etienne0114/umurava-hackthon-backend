@@ -28,7 +28,20 @@ The prompt requires the model to provide a "comprehensive summary (at least 150 
 
 ---
 
-## 2. Resume Parsing Prompt
+## 2. Multi-Candidate Batch Evaluation
+
+For performance and consistency, the system can evaluate a small batch of candidates in a single prompt. This improves throughput and ensures the AI compares applicants under identical job context.
+
+### Strategy: Batch JSON Array
+The prompt contains:
+- A single, shared job context block.
+- A JSON array of candidates (id, skills, experience summary, education summary, and profile summary).
+
+The model must return a JSON array where each entry includes the candidate id, scores, and reasoning. If the batch output is invalid or incomplete, the system gracefully falls back to per-candidate evaluation.
+
+---
+
+## 3. Resume Parsing Prompt
 
 Used when a candidate uploads a PDF, CSV, or plain text file to extract structured profile data.
 
@@ -42,7 +55,7 @@ The model is provided with the raw text from the document and instructed to extr
 
 ---
 
-## 3. Bias Mitigation and Safety
+## 4. Bias Mitigation and Safety
 
 To ensure fair and ethical screenings:
 1. **Demographic Neutrality**: The system is instructed to ignore demographic indicators and focus strictly on competence.

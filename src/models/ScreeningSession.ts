@@ -10,6 +10,8 @@ export interface IScreeningSession extends Document {
     topN: number;
     minScore: number;
     weights: WeightConfig;
+    batchMode?: boolean;
+    batchSize?: number;
   };
   error?: string;
   startedAt: Date;
@@ -56,6 +58,15 @@ const ScreeningSessionSchema = new Schema<IScreeningSession>({
       experience: { type: Number, required: true },
       education: { type: Number, required: true },
       relevance: { type: Number, required: true },
+    },
+    batchMode: {
+      type: Boolean,
+      default: false,
+    },
+    batchSize: {
+      type: Number,
+      min: [1, 'batchSize must be at least 1'],
+      default: 1,
     },
   },
   error: String,

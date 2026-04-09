@@ -13,6 +13,7 @@ export interface IScreeningResult extends Document {
     risks: string[];
     recommendation: Recommendation;
     reasoning: string;
+    aiFallback?: boolean;
   };
   scoreBreakdown: {
     skills: number;
@@ -82,6 +83,10 @@ const ScreeningResultSchema = new Schema<IScreeningResult>(
         type: String,
         required: true,
         minlength: [50, 'Reasoning must be at least 50 characters'],
+      },
+      aiFallback: {
+        type: Boolean,
+        default: false,
       },
     },
     scoreBreakdown: {

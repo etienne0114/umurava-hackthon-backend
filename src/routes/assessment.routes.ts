@@ -20,9 +20,11 @@ router.post('/bulk-generate', authorize('company'), (req: any, res) => assessmen
 router.get('/applicant/:applicantId', authorize('company'), (req: any, res) => assessmentController.getAssessmentByApplicant(req, res));
 router.patch('/applicant/:applicantId/sent', authorize('company'), (req: any, res) => assessmentController.confirmSent(req, res));
 router.get('/job/:jobId/latest-submitted', authorize('company'), (req: any, res) => assessmentController.getLatestSubmittedForJob(req, res));
+router.get('/job/:jobId/status', authorize('company'), (req: any, res) => assessmentController.getJobAssessmentStatus(req, res));
 
 // Talent endpoints
 router.get('/my', authorize('talent'), (req: any, res) => assessmentController.getMyAssessments(req, res));
+router.post('/my/:assessmentId/start', authorize('talent'), (req: any, res) => assessmentController.startMyAssessment(req, res));
 router.post('/my/:assessmentId/submit', authorize('talent'), (req: any, res) => assessmentController.submitMyAssessment(req, res));
 
 export default router;

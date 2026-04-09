@@ -35,6 +35,9 @@ The model assigns a score from 0-100 for each of the four categories:
 ### Explainable Reasoning
 For every candidate, the AI generates a detailed textual justification (at least 150 words). This reasoning explains *why* the scores were assigned, providing transparency and helping recruiters make informed decisions.
 
+### Batch Evaluation (When Applicable)
+For efficiency and consistency, the system can evaluate small batches of candidates in a single Gemini prompt. If batch output is incomplete or invalid, the engine falls back to per-candidate evaluation to ensure reliable results.
+
 ---
 
 ## 3. Post-Processing & Ranking

@@ -6,11 +6,14 @@ export interface IAssessment extends Document {
   talentUserId?: mongoose.Types.ObjectId;
   questions: Array<{
     question: string;
+    options: string[];
+    correctOptionIndex: number;
     expectedAnswer: string;
   }>;
   candidateAnswers: Array<{
     question: string;
     answer: string;
+    selectedOptionIndex?: number;
   }>;
   grading?: {
     totalScore?: number;
@@ -25,6 +28,11 @@ export interface IAssessment extends Document {
     gradedAt?: Date;
   };
   status: 'pending' | 'completed' | 'expired';
+  timePerQuestionSeconds?: number;
+  timeLimitSeconds?: number;
+  startedAt?: Date;
+  timedOut?: boolean;
+  dueAt?: Date;
   expiresAt?: Date;
   submittedAt?: Date;
   createdAt: Date;
@@ -50,6 +58,8 @@ const AssessmentSchema = new Schema<IAssessment>(
     questions: [
       {
         question: { type: String, required: true },
+        options: { type: [String], required: true },
+        correctOptionIndex: { type: Number, required: true, min: 0 },
         expectedAnswer: { type: String, required: true },
       },
     ],
@@ -57,6 +67,7 @@ const AssessmentSchema = new Schema<IAssessment>(
       {
         question: { type: String, required: true },
         answer: { type: String, required: true },
+        selectedOptionIndex: { type: Number },
       },
     ],
     grading: {
@@ -78,6 +89,11 @@ const AssessmentSchema = new Schema<IAssessment>(
       enum: ['pending', 'completed', 'expired'],
       default: 'pending',
     },
+    timePerQuestionSeconds: { type: Number, default: 60 },
+    timeLimitSeconds: { type: Number },
+    startedAt: Date,
+    timedOut: { type: Boolean, default: false },
+    dueAt: Date,
     expiresAt: Date,
     submittedAt: Date,
   },
