@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { jobService, CreateJobDTO } from '../services/job.service';
 import { APIError } from '../middleware/errorHandler';
+import { JobStatus } from '../types';
 import { AuthRequest } from '../middleware/auth';
 
 export class JobController {
@@ -9,9 +10,9 @@ export class JobController {
     try {
       const jobData: CreateJobDTO = {
         ...req.body,
-        createdBy: new mongoose.Types.ObjectId(req.user!.userId) as any,
+        createdBy: new mongoose.Types.ObjectId(req.user!.userId),
         company: req.body.company,
-      };
+      } as CreateJobDTO;
       const job = await jobService.createJob(jobData);
 
       res.status(201).json({
@@ -19,14 +20,14 @@ export class JobController {
         data: job,
         meta: { timestamp: new Date().toISOString() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
 
   async getAllJobs(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const status = req.query.status as any;
+      const status = req.query.status as JobStatus | undefined;
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
       const role = req.user!.role;
@@ -48,7 +49,7 @@ export class JobController {
         data: jobs,
         meta: { total, limit, offset, timestamp: new Date().toISOString() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -70,7 +71,7 @@ export class JobController {
         data: job,
         meta: { timestamp: new Date().toISOString() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -88,7 +89,7 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      const ownerId = (existing.createdBy as any)._id?.toString() || existing.createdBy.toString();
+      const ownerId = (existing.createdBy as { _id?: { toString(): string } })._id?.toString() || existing.createdBy.toString();
       if (ownerId !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
@@ -103,7 +104,7 @@ export class JobController {
         data: job,
         meta: { timestamp: new Date().toISOString() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -120,7 +121,7 @@ export class JobController {
         error.code = 'NOT_FOUND';
         throw error;
       }
-      const ownerId = (existing.createdBy as any)._id?.toString() || existing.createdBy.toString();
+      const ownerId = (existing.createdBy as { _id?: { toString(): string } })._id?.toString() || existing.createdBy.toString();
       if (ownerId !== userId) {
         const error: APIError = new Error('You do not own this job');
         error.statusCode = 403;
@@ -135,7 +136,7 @@ export class JobController {
         message: 'Job deleted successfully',
         meta: { timestamp: new Date().toISOString() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { applicantService } from '../services/applicant.service';
-import { fileService } from '../services/file.service';
+import { fileService, FileType } from '../services/file.service';
 import { APIError } from '../middleware/errorHandler';
 
 export class ApplicantController {
@@ -23,7 +23,7 @@ export class ApplicantController {
         throw error;
       }
 
-      const validatedType = (req as any).validatedFileType as string | undefined;
+      const validatedType = (req as unknown as Record<string, unknown>).validatedFileType as string | undefined;
       const detectedType = fileService.detectFileType(file.originalname);
       const resolvedType =
         detectedType ||
@@ -41,7 +41,7 @@ export class ApplicantController {
       const result = await applicantService.uploadFromFile(
         jobId,
         file.buffer,
-        resolvedType as any,
+        resolvedType as FileType,
         file.originalname
       );
 
@@ -55,7 +55,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -81,7 +81,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -115,7 +115,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -139,7 +139,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -158,7 +158,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -175,7 +175,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -200,7 +200,7 @@ export class ApplicantController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }

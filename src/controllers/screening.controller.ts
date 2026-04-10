@@ -23,7 +23,7 @@ export class ScreeningController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -47,7 +47,7 @@ export class ScreeningController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -67,7 +67,7 @@ export class ScreeningController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -92,7 +92,7 @@ export class ScreeningController {
           timestamp: new Date().toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
