@@ -1,4 +1,4 @@
-﻿import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
+import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
 import { generateWithOpenRouter, isOpenRouterConfigured } from '../config/openrouter';
 import { IJob } from '../models/Job';
 import { IApplicant } from '../models/Applicant';
@@ -45,14 +45,30 @@ interface BatchEvaluationItem {
 }
 
 export interface ParsedResumeProfile {
-  name: string;
-  position: string;
+  firstName: string;
+  lastName: string;
+  headline: string;
   bio: string;
   phone: string;
+  location: string;
   skills: string[];
-  languages: string[];
-  experience: Array<{ title: string; company: string; duration: string; description?: string }>;
-  education: Array<{ degree: string; institution: string; year: string }>;
+  languages: Array<{ name: string; proficiency: string }>;
+  experience: Array<{ 
+    role: string; 
+    company: string; 
+    startDate: string; 
+    endDate: string; 
+    description: string; 
+    technologies: string[];
+    isCurrent: boolean;
+  }>;
+  education: Array<{ 
+    degree: string; 
+    institution: string; 
+    fieldOfStudy: string;
+    startYear: string;
+    endYear: string;
+  }>;
 }
 
 export class GeminiService {
@@ -72,8 +88,8 @@ export class GeminiService {
     }
   }
 
-  private isGeminiQuotaError(error: any): boolean {
-    const message = String(error?.message || '');
+  private isGeminiQuotaError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
     const upper = message.toUpperCase();
     return (
       message.includes('429') ||
@@ -94,7 +110,7 @@ export class GeminiService {
         provider: 'gemini',
         model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const shouldFallback = this.isGeminiQuotaError(error);
       if (!shouldFallback) {
         throw error;
@@ -140,15 +156,16 @@ export class GeminiService {
       setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
 
       return evaluation;
-    } catch (error: any) {
-      const isQuotaExceeded = error.message?.includes('429') || error.message?.includes('quota')
-        || error.message?.includes('RESOURCE_EXHAUSTED');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isQuotaExceeded = message.includes('429') || message.includes('quota')
+        || message.includes('RESOURCE_EXHAUSTED');
 
       const reasoning = isQuotaExceeded
         ? 'Gemini AI is currently at its usage limit. This is a temporary neutral evaluation (50%) to ensure screening completes. Please regenerate in 1-2 minutes for accurate scores.'
-        : `Gemini evaluation encountered an issue (${error.message}). A neutral score has been assigned - please regenerate screening for accurate results.`;
+        : `Gemini evaluation encountered an issue (${message}). A neutral score has been assigned - please regenerate screening for accurate results.`;
 
-      logger.warn(`AI provider fallback failed for candidate ${applicant._id}: ${error.message}`);
+      logger.warn(`AI provider fallback failed for candidate ${applicant._id}: ${message}`);
       return {
         matchScore: 50,
         strengths: ['AI Evaluation temporarily unavailable'],
@@ -277,8 +294,9 @@ export class GeminiService {
       }
 
       return results;
-    } catch (error: any) {
-      logger.warn(`Batch evaluation failed, falling back to per-candidate: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`Batch evaluation failed, falling back to per-candidate: ${message}`);
       const results: Array<{ applicantId: string; evaluation: CandidateEvaluation }> = [];
       for (const applicant of applicants) {
         const evaluation = await this.evaluateCandidate(job, applicant);
@@ -296,27 +314,36 @@ export class GeminiService {
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
-  "name": "Full name of the person",
-  "position": "Current or most recent job title",
-  "bio": "Professional summary in 2-3 sentences highlighting expertise and goals",
-  "skills": ["skill1", "skill2", "skill3"],
+  "firstName": "Talent's first name",
+  "lastName": "Talent's last name",
+  "headline": "Short professional summary (e.g., Backend Engineer)",
+  "location": "City, Country",
+  "bio": "Professional summary in 2-3 sentences",
+  "skills": ["skill1", "skill2"],
+  "languages": [
+    { "name": "English", "proficiency": "Native/Fluent/Conversational/Basic" }
+  ],
   "experience": [
     {
-      "title": "Job Title",
+      "role": "Job Title",
       "company": "Company Name",
-      "duration": "Start Year - End Year (or Present)",
-      "description": "Key responsibilities and achievements in one sentence"
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM or Present",
+      "description": "Key responsibilities",
+      "technologies": ["Node.js", "React"],
+      "isCurrent": true/false
     }
   ],
   "education": [
     {
-      "degree": "Degree Name and Field",
-      "institution": "University/School Name",
-      "year": "Graduation Year"
+      "degree": "Degree Name",
+      "institution": "University Name",
+      "fieldOfStudy": "Field of Study",
+      "startYear": "YYYY",
+      "endYear": "YYYY"
     }
   ],
-  "phone": "phone number if present or empty string",
-  "languages": ["Language 1 (Level)", "Language 2"]
+  "phone": "phone number or """
 }
 
 Rules:
@@ -342,20 +369,23 @@ ${cvText.slice(0, 8000)}
           const parsed = JSON.parse(jsonMatch[0]);
 
           return {
-            name: parsed.name || '',
-            position: parsed.position || '',
+            firstName: parsed.firstName || '',
+            lastName: parsed.lastName || '',
+            headline: parsed.headline || '',
+            location: parsed.location || '',
             bio: parsed.bio || '',
             phone: parsed.phone || '',
             skills: Array.isArray(parsed.skills) ? parsed.skills.filter(Boolean) : [],
-            languages: Array.isArray(parsed.languages) ? parsed.languages.filter(Boolean) : [],
+            languages: Array.isArray(parsed.languages) ? parsed.languages : [],
             experience: Array.isArray(parsed.experience) ? parsed.experience.slice(0, 5) : [],
             education: Array.isArray(parsed.education) ? parsed.education.slice(0, 3) : [],
           };
         }, 3, 1000);
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Error parsing resume with Gemini:', error);
-      throw new Error(`Resume parsing failed: ${error.message}`);
+      throw new Error(`Resume parsing failed: ${message}`);
     }
   }
 
@@ -366,7 +396,11 @@ ${cvText.slice(0, 8000)}
       try {
         const evaluation = await this.evaluateCandidate(job, applicant);
         evaluations.push(evaluation);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const err = error as { status?: number };
+        if (err.status === 429) {
+          logger.warn('Rate limit hit during batch evaluation');
+        }
         logger.error(`Failed to evaluate applicant ${applicant._id}:`, error);
       }
     }
@@ -391,7 +425,7 @@ ${cvText.slice(0, 8000)}
             : `${job.requirements.experience.minYears}+ years`;
           const educationReqs = job.requirements.education.join(', ') || 'Not specified';
           const candidateExperience = applicant.profile.experience
-            .map(e => `${e.title} at ${e.company} (${e.duration})`)
+            .map(e => `${e.role} at ${e.company} (${e.duration})`)
             .join('; ') || 'Not provided';
 
           const prompt = `You are an expert technical interviewer for the role of "${job.title}"${job.company ? ` at ${job.company}` : ''}.
@@ -408,7 +442,7 @@ Location/Mode: ${job.requirements.location || 'Not specified'}
 Candidate: ${applicant.profile.name}
 Their Claimed Skills: ${applicant.profile.skills.join(', ') || 'Not listed'}
 Their Experience: ${candidateExperience}
-Their Summary: ${applicant.profile.summary || 'Not provided'}
+Their Summary: ${(applicant.profile as Record<string, unknown>)?.summary || 'Not provided'}
 
 === YOUR TASK ===
 Generate exactly 10 multiple-choice questions (MCQs) to screen this candidate for the "${job.title}" role.
@@ -448,7 +482,7 @@ Return ONLY a valid JSON array - no markdown fences, no extra text:
             .map((item) => ({
               question: String(item?.question || '').trim(),
               options: Array.isArray(item?.options)
-                ? item.options.map((opt: any) => String(opt).trim()).filter(Boolean)
+                ? item.options.map((opt: unknown) => String(opt).trim()).filter(Boolean)
                 : [],
               correctOptionIndex: Number.isInteger(item?.correctOptionIndex) ? item.correctOptionIndex : -1,
               expectedAnswer: String(item?.expectedAnswer || '').trim(),
@@ -462,9 +496,10 @@ Return ONLY a valid JSON array - no markdown fences, no extra text:
           return normalized.slice(0, 10);
         }, 3, 1000);
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Error generating technical test with Gemini:', error);
-      throw new Error(`Technical test generation failed: ${error.message}`);
+      throw new Error(`Technical test generation failed: ${message}`);
     }
   }
 
