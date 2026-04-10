@@ -21,19 +21,20 @@ jest.setTimeout(180000); // 3 minutes for E2E tests
 
 const TEST_SERVER_HOST = process.env.TEST_SERVER_HOST || '127.0.0.1';
 
-supertest.Test.prototype.serverAddress = function (app: any, path: string) {
-  const server: http.Server = this._server || app;
+supertest.Test.prototype.serverAddress = function (app: unknown, path: string) {
+  const self = this as unknown as { _server?: http.Server };
+  const server: http.Server = (self._server || app) as http.Server;
   const addr = server.address ? server.address() : null;
   if (!addr) {
-    this._server = app.listen(0, TEST_SERVER_HOST);
+    self._server = (app as { listen: (port: number, host: string) => http.Server }).listen(0, TEST_SERVER_HOST);
   }
-  const boundServer: http.Server = this._server || app;
+  const boundServer: http.Server = (self._server || app) as http.Server;
   const boundAddr = boundServer.address ? boundServer.address() : null;
   if (!boundAddr) {
     throw new Error('Unable to determine test server address');
   }
   const protocol = boundServer instanceof http.Server ? 'https' : 'http';
-  return `${protocol}://${TEST_SERVER_HOST}:${boundAddr.port}${path}`;
+  return `${protocol}://${TEST_SERVER_HOST}:${(boundAddr as import('net').AddressInfo).port}${path}`;
 };
 
 // Suppress console logs during tests (optional)

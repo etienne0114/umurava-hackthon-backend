@@ -23,6 +23,7 @@ const app: Application = express();
 
 if (process.env.NODE_ENV === 'test') {
   const originalListen = app.listen.bind(app);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (app as any).listen = (...args: any[]) => {
     if (args.length === 0) {
       return originalListen(0, '127.0.0.1');
