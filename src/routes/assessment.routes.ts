@@ -15,16 +15,16 @@ const aiTimeout = (ms: number) => (_req: Request, res: Response, next: NextFunct
 };
 
 // Company endpoints
-router.post('/generate', authorize('company'), aiTimeout(80000), (req: any, res) => assessmentController.generateAssessment(req, res));
-router.post('/bulk-generate', authorize('company'), (req: any, res) => assessmentController.bulkGenerateAssessments(req, res));
-router.get('/applicant/:applicantId', authorize('company'), (req: any, res) => assessmentController.getAssessmentByApplicant(req, res));
-router.patch('/applicant/:applicantId/sent', authorize('company'), (req: any, res) => assessmentController.confirmSent(req, res));
-router.get('/job/:jobId/latest-submitted', authorize('company'), (req: any, res) => assessmentController.getLatestSubmittedForJob(req, res));
-router.get('/job/:jobId/status', authorize('company'), (req: any, res) => assessmentController.getJobAssessmentStatus(req, res));
+router.post('/generate', authorize('company'), aiTimeout(80000), (req: import("express").Request, res: import("express").Response) => assessmentController.generateAssessment(req, res));
+router.post('/bulk-generate', authorize('company'), (req: import("express").Request, res: import("express").Response) => assessmentController.bulkGenerateAssessments(req, res));
+router.get('/applicant/:applicantId', authorize('company'), (req: import("express").Request, res: import("express").Response) => assessmentController.getAssessmentByApplicant(req, res));
+router.patch('/applicant/:applicantId/sent', authorize('company'), (req: import("express").Request, res: import("express").Response) => assessmentController.confirmSent(req, res));
+router.get('/job/:jobId/latest-submitted', authorize('company'), (req: import("express").Request, res: import("express").Response) => assessmentController.getLatestSubmittedForJob(req, res));
+router.get('/job/:jobId/status', authorize('company'), (req: import("express").Request, res: import("express").Response) => assessmentController.getJobAssessmentStatus(req, res));
 
 // Talent endpoints
-router.get('/my', authorize('talent'), (req: any, res) => assessmentController.getMyAssessments(req, res));
-router.post('/my/:assessmentId/start', authorize('talent'), (req: any, res) => assessmentController.startMyAssessment(req, res));
-router.post('/my/:assessmentId/submit', authorize('talent'), (req: any, res) => assessmentController.submitMyAssessment(req, res));
+router.get('/my', authorize('talent'), (req: import("express").Request, res: import("express").Response) => assessmentController.getMyAssessments(req, res));
+router.post('/my/:assessmentId/start', authorize('talent'), (req: import("express").Request, res: import("express").Response) => assessmentController.startMyAssessment(req, res));
+router.post('/my/:assessmentId/submit', authorize('talent'), (req: import("express").Request, res: import("express").Response) => assessmentController.submitMyAssessment(req, res));
 
 export default router;

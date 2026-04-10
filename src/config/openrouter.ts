@@ -64,8 +64,9 @@ export const generateWithOpenRouter = async (
     }
 
     return { text, model };
-  } catch (error: any) {
-    const responseData = error?.response?.data;
+  } catch (error: unknown) {
+    const axiosError = error as { response?: { data?: unknown; status?: number; statusText?: string }; message?: string; code?: string };
+    const responseData = axiosError?.response?.data;
     const responseText =
       typeof responseData === 'string'
         ? responseData
@@ -74,14 +75,14 @@ export const generateWithOpenRouter = async (
         : '';
 
     const details =
-      responseData?.error?.message ||
-      responseData?.message ||
-      error?.message ||
+      (responseData as Record<string, { message: string }>)?.error?.message ||
+      (responseData as Record<string, string>)?.message ||
+      axiosError?.message ||
       'Unknown OpenRouter error';
 
-    const status = error?.response?.status ? `status=${error.response.status}` : '';
-    const statusText = error?.response?.statusText ? `statusText=${error.response.statusText}` : '';
-    const code = error?.code ? `code=${error.code}` : '';
+    const status = axiosError?.response?.status ? `status=${axiosError.response.status}` : '';
+    const statusText = axiosError?.response?.statusText ? `statusText=${axiosError.response.statusText}` : '';
+    const code = axiosError?.code ? `code=${axiosError.code}` : '';
     const extra = [status, statusText, code, responseText].filter(Boolean).join(' | ');
 
     logger.error(`OpenRouter request failed: ${details}${extra ? ` (${extra})` : ''}`);
