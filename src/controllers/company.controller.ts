@@ -9,7 +9,7 @@ export class CompanyController {
    */
   async getDashboardStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as unknown as { user: { userId: string, role: string, email: string } }).user.userId;
 
       // 1. Get all jobs for this company
       const jobs = await Job.find({ createdBy: userId }).sort({ createdAt: -1 });

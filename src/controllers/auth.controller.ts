@@ -57,7 +57,7 @@ export class AuthController {
         data: result,
         message: 'Registration successful',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -80,7 +80,7 @@ export class AuthController {
         data: result,
         message: 'Login successful',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -113,7 +113,7 @@ export class AuthController {
           isVerified: user.isVerified,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -140,7 +140,7 @@ export class AuthController {
         },
         message: 'Profile updated successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }
@@ -190,7 +190,7 @@ export class AuthController {
         },
         message: 'Avatar uploaded successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       next(error);
     }
   }

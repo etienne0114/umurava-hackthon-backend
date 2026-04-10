@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { Request, Response, NextFunction } from 'express';
 import { Application } from '../models/Application';
 import { ProfileView } from '../models/ProfileView';
@@ -18,7 +20,7 @@ export class TalentController {
    */
   async getDashboardStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
 
       const [submissions, pending, hired, declined] = await Promise.all([
         Application.countDocuments({ userId }),
@@ -47,7 +49,7 @@ export class TalentController {
    */
   async getEngagementData(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -106,7 +108,7 @@ export class TalentController {
    */
   async getJobRecommendations(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
       const { type = 'best_match' } = req.query;
 
       // Load user
@@ -161,7 +163,7 @@ export class TalentController {
             skills: user.profile.skills || [],
             experience: user.profile.experience || [],
             education: user.profile.education || [],
-            summary: user.profile.bio || '',
+            bio: user.profile.bio || '',
           }
         } as any;
 
@@ -216,7 +218,7 @@ export class TalentController {
    */
   async applyToJob(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
       const { jobId } = req.params;
 
       // Verify job exists and is active
@@ -278,7 +280,7 @@ export class TalentController {
               skills: applicantUser.profile.skills,
               experience: applicantUser.profile.experience,
               education: applicantUser.profile.education,
-              summary: applicantUser.profile.bio,
+              bio: applicantUser.profile.bio,
             },
             metadata: {
               uploadedAt: new Date(),
@@ -304,7 +306,7 @@ export class TalentController {
    */
   async getApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
 
       const applications = await Application.find({ userId })
         .populate('jobId', 'title company employmentType workMode requirements status createdAt')
@@ -328,7 +330,7 @@ export class TalentController {
    */
   async uploadResume(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
 
       if (!req.file) {
         res.status(400).json({ success: false, error: { code: 'NO_FILE', message: 'No file uploaded' } });
@@ -386,26 +388,31 @@ export class TalentController {
 
       // Step 3: Build the $set update — only overwrite fields that were found
       // Filter arrays to only include entries with all required fields to avoid Mongoose validation errors
-      const validExperience = (extracted.experience || []).map((entry) => ({
-        title: entry.title,
-        company: entry.company,
-        duration: entry.duration,
-        description: entry.description,
+      // ParsedResumeProfile only has {title, company, duration, description?} for experience
+      // and {degree, institution, year} for education — map only those fields.
+      const validExperience = (extracted.experience || []).map((entry: any) => ({
+        role: (entry.role || '').trim() || 'Role',
+        company: (entry.company || '').trim() || 'Unknown',
         startDate: entry.startDate,
         endDate: entry.endDate,
+        description: entry.description,
         technologies: entry.technologies || [],
         isCurrent: entry.isCurrent || false,
       })).filter(
-        (e) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
+        (e) => e.role !== 'Role' || e.company !== 'Unknown'
       );
-      const validEducation = (extracted.education || []).map((entry) => ({
-        degree: entry.degree,
-        institution: entry.institution,
-        fieldOfStudy: entry.fieldOfStudy,
-        startYear: entry.startYear,
-        endYear: entry.endYear,
-      })).filter(
-        (e) => (e.degree?.trim() || e.institution?.trim())
+      const validEducation = (extracted.education || []).map((entry: any) => {
+        const startYear = parseInt(entry.startYear || '', 10);
+        const endYear = parseInt(entry.endYear || '', 10);
+        return {
+          degree: (entry.degree || '').trim() || 'Degree',
+          institution: (entry.institution || '').trim() || 'Institution',
+          fieldOfStudy: entry.fieldOfStudy,
+          startYear: isNaN(startYear) ? undefined : startYear,
+          endYear: isNaN(endYear) ? undefined : endYear,
+        };
+      }).filter(
+        (e) => e.degree !== 'Degree' || e.institution !== 'Institution'
       );
 
       const skillEntries = (extracted.skills || []).map((name) => ({
@@ -418,21 +425,22 @@ export class TalentController {
         proficiency: 'Conversational' as const,
       }));
 
-      const setFields: Record<string, any> = {};
+      const setFields: Record<string, unknown> = {};
 
-      if (extracted.name) {
-        setFields['profile.name'] = extracted.name;
-        const parts = extracted.name.split(/\s+/).filter(Boolean);
-        if (parts.length > 0) {
-          setFields['profile.firstName'] = parts[0];
-          if (parts.length > 1) {
-            setFields['profile.lastName'] = parts.slice(1).join(' ');
-          }
-        }
+      if (extracted.firstName) {
+        setFields['profile.firstName'] = extracted.firstName;
       }
-      if (extracted.position) {
-        setFields['profile.position'] = extracted.position;
-        setFields['profile.headline'] = extracted.position;
+      if (extracted.lastName) {
+        setFields['profile.lastName'] = extracted.lastName;
+      }
+      if (extracted.firstName || extracted.lastName) {
+        setFields['profile.name'] = `${extracted.firstName || ''} ${extracted.lastName || ''}`.trim();
+      }
+      if (extracted.headline) {
+        setFields['profile.headline'] = extracted.headline;
+      }
+      if ((extracted as any).location) {
+        setFields['profile.location'] = (extracted as any).location;
       }
       if (extracted.bio) setFields['profile.bio'] = extracted.bio.slice(0, 500);
       if (extracted.phone) setFields['profile.phone'] = extracted.phone;
@@ -443,15 +451,17 @@ export class TalentController {
 
       // Calculate new profile completion
       const completion = [
-        extracted.name,
-        extracted.position,
+        extracted.firstName,
+        extracted.lastName,
+        extracted.headline,
+        (extracted as any).location,
         extracted.bio,
         extracted.phone,
         extracted.skills?.length > 0 ? 'yes' : '',
         validExperience.length > 0 ? 'yes' : '',
         validEducation.length > 0 ? 'yes' : '',
       ].filter(Boolean).length;
-      setFields['profile.profileCompletion'] = Math.round((completion / 7) * 100);
+      setFields['profile.profileCompletion'] = Math.round((completion / 9) * 100);
 
       const updatedUser = await User.findByIdAndUpdate(
         userId,
@@ -488,7 +498,7 @@ export class TalentController {
    */
   async saveJob(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
       const { jobId } = req.params;
 
       await SavedJob.findOneAndUpdate(
@@ -508,7 +518,7 @@ export class TalentController {
    */
   async unsaveJob(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user.userId;
       const { jobId } = req.params;
 
       await SavedJob.findOneAndDelete({ userId, jobId });
