@@ -53,14 +53,15 @@ export class ApplicantService {
                 })),
               experience: profile.experience,
               education: profile.education,
-              summary: profile.portfolio,
+              bio: profile.portfolio,
             },
           });
 
           await applicant.save();
           applicants.push(applicant);
-        } catch (error: any) {
-          if (error.code === 11000) {
+        } catch (error: unknown) {
+          const err = error as { code?: number };
+          if (err.code === 11000) {
             logger.warn(`Duplicate applicant skipped: ${profile.email}`);
           } else {
             throw error;
@@ -74,7 +75,7 @@ export class ApplicantService {
 
       logger.info(`Imported ${applicants.length} applicants from Umurava for job ${jobId}`);
       return applicants;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error importing from Umurava:', error);
       throw error;
     }
@@ -113,7 +114,7 @@ export class ApplicantService {
                 })),
               experience: parsed.experience,
               education: parsed.education,
-              summary: parsed.summary,
+              bio: parsed.summary,
             },
             metadata: {
               fileName,
@@ -123,8 +124,9 @@ export class ApplicantService {
 
           await applicant.save();
           applicants.push(applicant);
-        } catch (error: any) {
-          if (error.code === 11000) {
+        } catch (error: unknown) {
+          const err = error as { code?: number };
+          if (err.code === 11000) {
             logger.warn(`Duplicate applicant skipped: ${parsed.email}`);
             duplicates += 1;
           } else {
@@ -146,7 +148,7 @@ export class ApplicantService {
           duplicates,
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error uploading applicants from file:', error);
       throw error;
     }
@@ -175,12 +177,12 @@ export class ApplicantService {
 
       // Re-hydrate plain docs as Mongoose documents
       const applicants = rawDocs.map((doc) =>
-        Applicant.hydrate(doc as any)
+        Applicant.hydrate(doc as Record<string, unknown>)
       ) as unknown as IApplicant[];
 
       logger.info(`getApplicantsByJob: jobId=${jobId}, found=${total}`);
       return { applicants, total };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching applicants for job ${jobId}:`, error);
       throw error;
     }
@@ -189,7 +191,7 @@ export class ApplicantService {
   async getApplicantById(applicantId: string): Promise<IApplicant | null> {
     try {
       return await Applicant.findById(applicantId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching applicant ${applicantId}:`, error);
       throw error;
     }
@@ -208,7 +210,7 @@ export class ApplicantService {
 
       logger.info(`Applicant updated: ${applicantId}`);
       return applicant;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error updating applicant ${applicantId}:`, error);
       throw error;
     }
@@ -229,7 +231,7 @@ export class ApplicantService {
 
       logger.info(`Applicant deleted: ${applicantId}`);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error deleting applicant ${applicantId}:`, error);
       throw error;
     }
@@ -294,7 +296,7 @@ export class ApplicantService {
 
       logger.info(`Applicant ${applicantId} status updated to ${status}`);
       return applicant;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error updating status for applicant ${applicantId}:`, error);
       throw error;
     }

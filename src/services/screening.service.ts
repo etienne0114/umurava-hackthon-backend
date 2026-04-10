@@ -37,9 +37,8 @@ export class ScreeningService {
     if (pendingAssessments.length === 0) return;
 
     const dueAtValues = pendingAssessments
-      .map((a: any) => a.dueAt)
-      .filter(Boolean)
-      .map((date: any) => new Date(date as any));
+      .map((a) => a.dueAt)
+      .filter((date): date is Date => date instanceof Date);
     const latestDueAt = dueAtValues.length > 0
       ? new Date(Math.max(...dueAtValues.map((d) => d.getTime())))
       : null;
@@ -92,7 +91,7 @@ export class ScreeningService {
 
       logger.info(`Screening started for job ${jobId}, session ${session._id}`);
       return session;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error starting screening:', error);
       throw error;
     }
@@ -119,7 +118,7 @@ export class ScreeningService {
               applicantId: result.applicantId,
             });
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           logger.error(`Failed to evaluate batch starting at ${i}:`, error);
         } finally {
           await ScreeningSession.findByIdAndUpdate(sessionId, {
@@ -169,10 +168,11 @@ export class ScreeningService {
       }
 
       logger.info(`Screening completed for session ${sessionId}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       await ScreeningSession.findByIdAndUpdate(sessionId, {
         status: 'failed',
-        error: error.message,
+        error: message,
         completedAt: new Date(),
       });
 
@@ -202,7 +202,7 @@ export class ScreeningService {
         .sort({ rank: 1 })
         .limit(limit)
         .populate('applicantId');
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching screening results for job ${jobId}:`, error);
       throw error;
     }
@@ -211,7 +211,7 @@ export class ScreeningService {
   async getScreeningStatus(sessionId: string): Promise<IScreeningSession | null> {
     try {
       return await ScreeningSession.findById(sessionId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching screening status for session ${sessionId}:`, error);
       throw error;
     }
@@ -230,7 +230,7 @@ export class ScreeningService {
       }
 
       return await this.startScreening(jobId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error regenerating screening:', error);
       throw error;
     }

@@ -1,5 +1,6 @@
 import { Job, IJob } from '../models/Job';
 import { Applicant } from '../models/Applicant';
+import { IUser } from '../models/User';
 import { JobRequirements, WeightConfig, JobStatus } from '../types';
 import logger from '../utils/logger';
 
@@ -38,7 +39,7 @@ export class JobService {
       await job.save();
       logger.info(`Job created: ${job._id}`);
       return job;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error creating job:', error);
       throw error;
     }
@@ -51,12 +52,13 @@ export class JobService {
         // Fetch real applicant count from Applicant model
         job.applicantCount = await Applicant.countDocuments({ jobId: job._id });
         
-        if (!job.company && (job.createdBy as any)?.profile?.company) {
-          job.company = (job.createdBy as any).profile.company;
+        const creator = job.createdBy as unknown as IUser;
+        if (!job.company && creator?.profile?.company) {
+          job.company = creator.profile.company;
         }
       }
       return job;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching job ${jobId}:`, error);
       throw error;
     }
@@ -64,7 +66,7 @@ export class JobService {
 
   async getAllJobs(filters: JobFilters = {}): Promise<{ jobs: IJob[]; total: number }> {
     try {
-      const query: any = {};
+      const query: Record<string, unknown> = {};
       if (filters.status) query.status = filters.status;
       if (filters.createdBy) query.createdBy = filters.createdBy;
 
@@ -86,14 +88,15 @@ export class JobService {
           // Real-time applicant counting
           job.applicantCount = await Applicant.countDocuments({ jobId: job._id });
 
-          if (!job.company && (job.createdBy as any)?.profile?.company) {
-            job.company = (job.createdBy as any).profile.company;
+          const creator = job.createdBy as unknown as IUser;
+          if (!job.company && creator?.profile?.company) {
+            job.company = creator.profile.company;
           }
         })
       );
 
       return { jobs, total };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error fetching jobs:', error);
       throw error;
     }
@@ -112,7 +115,7 @@ export class JobService {
 
       logger.info(`Job updated: ${jobId}`);
       return job;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error updating job ${jobId}:`, error);
       throw error;
     }
@@ -128,7 +131,7 @@ export class JobService {
 
       logger.info(`Job deleted: ${jobId}`);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error deleting job ${jobId}:`, error);
       throw error;
     }
