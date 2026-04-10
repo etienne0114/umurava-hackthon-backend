@@ -9,13 +9,14 @@
  */
 
 export interface ParsedResumeProfile {
-  name: string;
-  position: string;
+  firstName: string;
+  lastName: string;
+  headline: string;
   bio: string;
   phone: string;
   skills: string[];
   languages: string[];
-  experience: Array<{ title: string; company: string; duration: string; description?: string }>;
+  experience: Array<{ role: string; company: string; duration: string; description?: string }>;
   education: Array<{ degree: string; institution: string; year: string }>;
 }
 
@@ -296,7 +297,7 @@ export function parseResumeText(text: string): ParsedResumeProfile {
       }
 
       if (title || company) {
-        experience.push({ title: title || '', company, duration, description });
+        experience.push({ role: title || '', company, duration, description });
       }
 
       lastDateIdx = i;
@@ -313,7 +314,7 @@ export function parseResumeText(text: string): ParsedResumeProfile {
         if (block.length > 0) {
           const years = [...block.join(' ').matchAll(/\b(19|20)\d{2}\b/g)].map(m => m[0]);
           experience.push({
-            title: block[0] || '',
+            role: block[0] || '',
             company: block[1] || '',
             duration: years.length >= 2 ? `${years[0]} – ${years[1]}` : years[0] || '',
             description: insertSpaces(block.slice(2).join(' ')).slice(0, 200),
@@ -369,9 +370,9 @@ export function parseResumeText(text: string): ParsedResumeProfile {
 
   // ── Position ──────────────────────────────────────────────────────────────────
   // Use first experience title if valid, else scan top of document
-  let position = '';
-  if (experience.length > 0 && experience[0].title) {
-    position = experience[0].title;
+  let headline = '';
+  if (experience.length > 0 && experience[0].role) {
+    headline = experience[0].role;
   } else {
     for (const line of lines.slice(1, 8)) {
       if (EMAIL_RE.test(line)) continue;
@@ -380,11 +381,15 @@ export function parseResumeText(text: string): ParsedResumeProfile {
       if (line === name) continue;
       const wc = line.split(/\s+/).length;
       if (wc >= 1 && wc <= 6 && !/\d{4}/.test(line)) {
-        position = line;
+        headline = line;
         break;
       }
     }
   }
 
-  return { name, position, bio, phone, skills: uniqueSkills, languages: uniqueLangs, experience, education };
+  const nameParts = name.split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || '';
+
+  return { firstName, lastName, headline, bio, phone, skills: uniqueSkills, languages: uniqueLangs, experience, education };
 }

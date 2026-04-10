@@ -14,11 +14,11 @@ export const buildEvaluationPrompt = (job: IJob, applicant: IApplicant): string 
     : `${job.requirements.experience.minYears}+`;
 
   const experienceText = applicant.profile.experience
-    .map((exp) => `${exp.title} at ${exp.company} (${exp.duration})`)
+    .map((exp) => `${exp.role} at ${exp.company} (${exp.duration})`)
     .join(', ') || 'No experience listed';
 
   const educationText = applicant.profile.education
-    .map((edu) => `${edu.degree} from ${edu.institution} (${edu.year})`)
+    .map((edu) => `${edu.degree} from ${edu.institution}${edu.endYear ? ` (${edu.endYear})` : ''}`)
     .join(', ') || 'No education listed';
 
   return `You are an expert recruitment AI assistant specialized in the African tech market. Your role is to evaluate candidates objectively and ethically based on job requirements.
@@ -44,7 +44,7 @@ export const buildEvaluationPrompt = (job: IJob, applicant: IApplicant): string 
 - Current Skills: ${applicant.profile.skills.join(', ') || 'No skills listed'}
 - Experience History: ${experienceText}
 - Education: ${educationText}
-- Professional Summary: ${applicant.profile.summary || 'No summary provided'}
+- Professional Summary: ${(applicant.profile as Record<string, unknown>)?.summary || 'No summary provided'}
 
 ### EVALUATION CRITERIA (Weighted):
 - Skills Match (${job.weights.skills * 100}%): Technical proficiency and tool mastery.
@@ -75,11 +75,11 @@ export const buildBatchEvaluationPrompt = (job: IJob, applicants: IApplicant[]):
 
   const candidates = applicants.map((applicant) => {
     const experienceText = applicant.profile.experience
-      .map((exp) => `${exp.title} at ${exp.company} (${exp.duration})`)
+      .map((exp) => `${exp.role} at ${exp.company} (${exp.duration})`)
       .join(', ') || 'No experience listed';
 
     const educationText = applicant.profile.education
-      .map((edu) => `${edu.degree} from ${edu.institution} (${edu.year})`)
+      .map((edu) => `${edu.degree} from ${edu.institution}${edu.endYear ? ` (${edu.endYear})` : ''}`)
       .join(', ') || 'No education listed';
 
     return {
@@ -88,7 +88,7 @@ export const buildBatchEvaluationPrompt = (job: IJob, applicants: IApplicant[]):
       skills: applicant.profile.skills,
       experience: experienceText,
       education: educationText,
-      summary: applicant.profile.summary || '',
+      summary: (applicant.profile as Record<string, unknown>)?.summary || '',
     };
   });
 
@@ -181,8 +181,9 @@ export const parseGeminiResponse = (responseText: string): GeminiEvaluationRespo
       recommendation: parsed.recommendation || 'consider',
       reasoning: parsed.reasoning,
     };
-  } catch (error: any) {
-    throw new Error(`Failed to parse Gemini response: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse Gemini response: ${message}`);
   }
 };
 

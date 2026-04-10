@@ -1,7 +1,7 @@
-import { Applicant } from '../models/Applicant';
+import { Applicant, IApplicant } from '../models/Applicant';
 import { User } from '../models/User';
 
-export async function resolveTalentUserIdForApplicant(applicant: any): Promise<string | undefined> {
+export async function resolveTalentUserIdForApplicant(applicant: IApplicant | null | undefined): Promise<string | undefined> {
   if (!applicant) return undefined;
 
   // 1) Prefer sourceId when it points to a local User
@@ -33,7 +33,7 @@ export async function getTalentApplicantMatches(userId: string): Promise<{
   const user = await User.findById(userId).select('email');
   const talentEmail = user?.email?.toLowerCase();
 
-  const baseQuery: any = { $or: [{ sourceId: userId }] };
+  const baseQuery: { $or: Array<Record<string, unknown>> } = { $or: [{ sourceId: userId }] };
   if (talentEmail) {
     baseQuery.$or.push({ 'profile.email': talentEmail });
   }

@@ -16,8 +16,8 @@ export interface ParsedApplicant {
 
 const normalizeKey = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const normalizeRow = (row: Record<string, any>): Record<string, any> => {
-  const normalized: Record<string, any> = {};
+const normalizeRow = (row: Record<string, unknown>): Record<string, unknown> => {
+  const normalized: Record<string, unknown> = {};
   Object.entries(row || {}).forEach(([key, value]) => {
     const safeKey = normalizeKey(key);
     if (!safeKey) return;
@@ -28,7 +28,7 @@ const normalizeRow = (row: Record<string, any>): Record<string, any> => {
   return normalized;
 };
 
-const pickField = (row: Record<string, any>, aliases: string[]): any => {
+const pickField = (row: Record<string, unknown>, aliases: string[]): unknown => {
   for (const alias of aliases) {
     const key = normalizeKey(alias);
     if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
@@ -38,13 +38,13 @@ const pickField = (row: Record<string, any>, aliases: string[]): any => {
   return '';
 };
 
-const asText = (value: any): string => {
+const asText = (value: unknown): string => {
   if (value === undefined || value === null) return '';
   if (Array.isArray(value)) return value.join(', ');
   return String(value);
 };
 
-export const parseSkillsString = (skillsStr: string | any): string[] => {
+export const parseSkillsString = (skillsStr: unknown): string[] => {
   const raw = asText(skillsStr);
   if (!raw) return [];
   return raw
@@ -53,7 +53,7 @@ export const parseSkillsString = (skillsStr: string | any): string[] => {
     .filter((s) => s.length > 0);
 };
 
-export const parseExperienceString = (expStr: string | any): ExperienceEntry[] => {
+export const parseExperienceString = (expStr: unknown): ExperienceEntry[] => {
   const raw = asText(expStr);
   if (!raw) return [];
   
@@ -61,7 +61,7 @@ export const parseExperienceString = (expStr: string | any): ExperienceEntry[] =
   return entries.map((entry) => {
     const parts = entry.split('|').map((p) => p.trim());
     return {
-      title: parts[0] || 'Not specified',
+      role: parts[0] || 'Not specified',
       company: parts[1] || 'Not specified',
       duration: parts[2] || 'Not specified',
       description: parts[3],
@@ -69,7 +69,7 @@ export const parseExperienceString = (expStr: string | any): ExperienceEntry[] =
   });
 };
 
-export const parseEducationString = (eduStr: string | any): EducationEntry[] => {
+export const parseEducationString = (eduStr: unknown): EducationEntry[] => {
   const raw = asText(eduStr);
   if (!raw) return [];
   
@@ -91,7 +91,7 @@ export const parseCSV = (buffer: Buffer): Promise<ParsedApplicant[]> => {
 
     stream
       .pipe(csv())
-      .on('data', (row: any) => {
+      .on('data', (row: Record<string, unknown>) => {
         const normalized = normalizeRow(row);
         const name = asText(pickField(normalized, [
           'name',
@@ -138,7 +138,7 @@ export const parseExcel = async (buffer: Buffer): Promise<ParsedApplicant[]> => 
   try {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows: any[] = XLSX.utils.sheet_to_json(firstSheet);
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet);
 
     const applicants: ParsedApplicant[] = [];
 
@@ -178,7 +178,8 @@ export const parseExcel = async (buffer: Buffer): Promise<ParsedApplicant[]> => 
     }
 
     return applicants;
-  } catch (error: any) {
-    throw new Error(`Excel parsing error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Excel parsing error: ${message}`);
   }
 };

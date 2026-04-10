@@ -8,40 +8,31 @@ export const parsePDF = async (buffer: Buffer): Promise<ParsedApplicant> => {
   try {
     const data = await pdf(buffer);
     text = data.text;
-  } catch (error: any) {
-    logger.warn(`pdf-parse failed, falling back to raw text extraction: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`pdf-parse failed, falling back to raw text extraction: ${message}`);
     // Fallback: try to extract text as UTF-8 string (works for many simple/uncompressed PDFs)
     // eslint-disable-next-line no-control-regex
     text = buffer.toString('utf8').replace(/[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F]/g, ' ');
   }
 
-  try {
-    const name = extractName(text);
-    const email = extractEmail(text);
-    const phone = extractPhone(text);
-    const skills = extractSkills(text);
-    const experience = extractExperience(text);
-    const education = extractEducation(text);
+  const name = extractName(text);
+  const email = extractEmail(text);
+  const phone = extractPhone(text);
+  const skills = extractSkills(text);
+  const experience = extractExperience(text);
+  const education = extractEducation(text);
 
-    if (!email) {
-      throw new Error('Could not extract required field (email) from PDF');
-    }
-
-    const finalName = name || email.split('@')[0];
-
-    return {
-      name: finalName,
-      email: email.toLowerCase(),
-      phone,
-      skills,
-      experience,
-      education,
-      summary: extractSummary(text),
-      rawText: text,
-    };
-  } catch (error: any) {
-    throw new Error(`PDF parsing error: ${error.message}`);
-  }
+  return {
+    name: name || email.split('@')[0] || 'Unknown',
+    email: email.toLowerCase(),
+    phone,
+    skills,
+    experience,
+    education,
+    summary: extractSummary(text),
+    rawText: text,
+  };
 };
 
 const extractName = (text: string): string => {
@@ -87,7 +78,7 @@ const extractExperience = (text: string): ExperienceEntry[] => {
   if (!expSection) return [];
   
   return [{
-    title: 'Experience',
+    role: 'Experience',
     company: 'See resume',
     duration: 'See resume',
     description: expSection[1].substring(0, 500),
@@ -101,7 +92,6 @@ const extractEducation = (text: string): EducationEntry[] => {
   return [{
     degree: 'See resume',
     institution: 'See resume',
-    year: 'See resume',
   }];
 };
 
