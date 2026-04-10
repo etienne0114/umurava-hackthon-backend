@@ -13,7 +13,7 @@ export interface LanguageEntry {
 }
 
 export interface ExperienceEntry {
-  title: string;
+  role: string;
   company: string;
   duration?: string;
   description?: string;
