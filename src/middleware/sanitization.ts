@@ -59,7 +59,7 @@ export const sanitizeBody = (req: Request, _res: Response, next: NextFunction): 
 /**
  * Recursively sanitize object properties
  */
-const sanitizeObject = (obj: any): any => {
+const sanitizeObject = (obj: unknown): unknown => {
   if (typeof obj !== 'object' || obj === null) {
     return typeof obj === 'string' ? sanitizeString(obj) : obj;
   }
@@ -68,11 +68,11 @@ const sanitizeObject = (obj: any): any => {
     return obj.map(sanitizeObject);
   }
   
-  const sanitized: any = {};
+  const sanitized: Record<string, unknown> = {};
   const hasOwnProperty = Object.prototype.hasOwnProperty;
-  for (const key in obj) {
+  for (const key in obj as Record<string, unknown>) {
     if (hasOwnProperty.call(obj, key)) {
-      sanitized[key] = sanitizeObject(obj[key]);
+      sanitized[key] = sanitizeObject((obj as Record<string, unknown>)[key]);
     }
   }
   

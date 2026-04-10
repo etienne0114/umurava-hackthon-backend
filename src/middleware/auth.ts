@@ -30,8 +30,8 @@ export const authenticate = async (
 
     req.user = decoded;
     next();
-  } catch (error: any) {
-    const apiError: APIError = new Error(error.message || 'Authentication failed');
+  } catch (error: unknown) {
+    const apiError: APIError = new Error((error as Error).message || 'Authentication failed');
     apiError.statusCode = 401;
     apiError.code = 'UNAUTHORIZED';
     next(apiError);

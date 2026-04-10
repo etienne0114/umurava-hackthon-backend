@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 export interface APIError extends Error {
   statusCode?: number;
   code?: string;
-  details?: any;
+  details?: unknown;
 }
 
 export const errorHandler = (
