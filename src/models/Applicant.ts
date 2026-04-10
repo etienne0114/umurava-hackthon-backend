@@ -31,7 +31,7 @@ export interface IApplicant extends Document {
     projects?: ProjectEntry[];
     availability?: Availability;
     socialLinks?: SocialLinks;
-    summary?: string;
+    bio?: string;
     resumeUrl?: string;
   };
   metadata?: {
@@ -45,7 +45,7 @@ export interface IApplicant extends Document {
 }
 
 const ExperienceSchema = new Schema<ExperienceEntry>({
-  title: { type: String, required: true },
+  role: { type: String, required: true },
   company: { type: String, required: true },
   duration: { type: String },
   description: String,
@@ -169,18 +169,22 @@ const ApplicantSchema = new Schema<IApplicant>(
       },
       firstName: {
         type: String,
+        required: [true, 'First name is required'],
         trim: true,
       },
       lastName: {
         type: String,
+        required: [true, 'Last name is required'],
         trim: true,
       },
       headline: {
         type: String,
+        required: [true, 'Headline is required'],
         trim: true,
       },
       location: {
         type: String,
+        required: [true, 'Location is required'],
         trim: true,
       },
       phone: String,
@@ -210,13 +214,14 @@ const ApplicantSchema = new Schema<IApplicant>(
       },
       availability: {
         type: AvailabilitySchema,
+        required: [true, 'Availability is required'],
         default: () => ({}),
       },
       socialLinks: {
         type: SocialLinksSchema,
         default: () => ({}),
       },
-      summary: String,
+      bio: String,
       resumeUrl: String,
     },
     status: {

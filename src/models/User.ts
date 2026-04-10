@@ -77,7 +77,7 @@ const LanguageSchema = new Schema<LanguageEntry>(
 
 const ExperienceSchema = new Schema<ExperienceEntry>(
   {
-    title: { type: String, required: true, trim: true },
+    role: { type: String, required: true, trim: true },
     company: { type: String, required: true, trim: true },
     duration: { type: String, trim: true },
     description: String,
@@ -179,21 +179,25 @@ const userSchema = new Schema<IUser>(
       },
       firstName: {
         type: String,
+        required: [function(this: import("mongoose").Document & Record<string, unknown>) { return this.role === 'talent'; }, 'First name is required for talent'],
         trim: true,
         default: '',
       },
       lastName: {
         type: String,
+        required: [function(this: import("mongoose").Document & Record<string, unknown>) { return this.role === 'talent'; }, 'Last name is required for talent'],
         trim: true,
         default: '',
       },
       headline: {
         type: String,
+        required: [function(this: import("mongoose").Document & Record<string, unknown>) { return this.role === 'talent'; }, 'Headline is required for talent'],
         trim: true,
         default: '',
       },
       location: {
         type: String,
+        required: [function(this: import("mongoose").Document & Record<string, unknown>) { return this.role === 'talent'; }, 'Location is required for talent'],
         trim: true,
         default: '',
       },
@@ -250,6 +254,7 @@ const userSchema = new Schema<IUser>(
       },
       availability: {
         type: AvailabilitySchema,
+        required: [function(this: import("mongoose").Document & Record<string, unknown>) { return this.role === 'talent'; }, 'Availability is required for talent'],
         default: () => ({}),
       },
       socialLinks: {
