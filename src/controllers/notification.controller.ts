@@ -8,7 +8,7 @@ export class NotificationController {
    */
   async getNotifications(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as unknown as { user: { userId: string, role: string, email: string } }).user.userId;
       const notifications = await Notification.find({ userId })
         .sort({ createdAt: -1 })
         .limit(50);
@@ -33,7 +33,7 @@ export class NotificationController {
   async markAsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const userId = (req as any).user.userId;
+      const userId = (req as unknown as { user: { userId: string, role: string, email: string } }).user.userId;
 
       const notification = await Notification.findOneAndUpdate(
         { _id: id, userId },
@@ -57,7 +57,7 @@ export class NotificationController {
    */
   async markAllAsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as unknown as { user: { userId: string, role: string, email: string } }).user.userId;
       await Notification.updateMany({ userId, isRead: false }, { isRead: true });
 
       res.json({ success: true, message: 'All notifications marked as read' });
@@ -72,7 +72,7 @@ export class NotificationController {
   async deleteNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const userId = (req as any).user.userId;
+      const userId = (req as unknown as { user: { userId: string, role: string, email: string } }).user.userId;
 
       const notification = await Notification.findOneAndDelete({ _id: id, userId });
 

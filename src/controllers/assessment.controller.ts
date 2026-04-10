@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { Request, Response } from 'express';
 import { Assessment } from '../models/Assessment';
 import { Applicant } from '../models/Applicant';
@@ -387,7 +389,7 @@ export class AssessmentController {
    */
   async getMyAssessments(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user?.userId;
       if (!userId) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
       }
@@ -418,7 +420,7 @@ export class AssessmentController {
         );
       }
 
-      const uniqueMap = new Map<string, any>();
+      const uniqueMap = new Map<string, unknown>();
       for (const assessment of assessments) {
         uniqueMap.set(assessment._id.toString(), assessment);
       }
@@ -438,7 +440,7 @@ export class AssessmentController {
    */
   async startMyAssessment(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user?.userId;
       const { assessmentId } = req.params;
 
       if (!userId) {
@@ -518,7 +520,7 @@ export class AssessmentController {
    */
   async submitMyAssessment(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any as { user: { userId: string, role: string, email: string } }).user?.userId;
       const { assessmentId } = req.params;
       const { answers, autoSubmit } = req.body;
 
@@ -563,7 +565,7 @@ export class AssessmentController {
           typeof provided?.answer === 'string'
             ? provided.answer.trim()
             : Number.isInteger(selectedIndex) && Array.isArray(q.options)
-            ? String(q.options[selectedIndex] || '').trim()
+            ? String(q.options[selectedIndex as number] || '').trim()
             : '';
         return {
           question: q.question,

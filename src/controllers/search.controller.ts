@@ -12,7 +12,7 @@ export class SearchController {
   async search(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { q } = req.query;
-      const { userId, role } = (req as any).user;
+      const { userId, role } = (req as unknown as { user: { userId: string, role: string, email: string } }).user;
 
       if (!q || typeof q !== 'string' || q.trim().length === 0) {
         res.json({ success: true, data: { jobs: [], applicants: [] } });
@@ -20,7 +20,7 @@ export class SearchController {
       }
 
       const searchQuery = q.trim();
-      const results: { jobs: any[]; applicants: any[] } = {
+      const results: { jobs: unknown[]; applicants: unknown[] } = {
         jobs: [],
         applicants: [],
       };
