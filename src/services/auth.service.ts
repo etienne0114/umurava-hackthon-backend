@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { User, IUser, UserRole } from '../models/User';
+import { ExperienceEntry, EducationEntry, SkillEntry, LanguageEntry, CertificationEntry, ProjectEntry } from '../types/index';
 import logger from '../utils/logger';
 
 export interface RegisterData {
@@ -77,7 +78,7 @@ export class AuthService {
         },
         token,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error during registration:', error);
       throw error;
     }
@@ -108,7 +109,7 @@ export class AuthService {
         },
         token,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error during login:', error);
       throw error;
     }
@@ -117,7 +118,7 @@ export class AuthService {
   async getUserById(userId: string): Promise<IUser | null> {
     try {
       return await User.findById(userId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error fetching user ${userId}:`, error);
       throw error;
     }
@@ -126,21 +127,21 @@ export class AuthService {
   async updateProfile(userId: string, updates: Partial<IUser['profile']>): Promise<IUser> {
     try {
     // Merge individual profile fields without overwriting the entire object
-    const sanitizers: Record<string, (value: any) => any> = {
-      experience: (value: any[]) =>
-        value.filter(
-          (e) => (e.title?.trim() || e.company?.trim()) && e.duration?.trim()
+    const sanitizers: Record<string, (value: unknown[]) => unknown[]> = {
+      experience: (value: unknown[]) =>
+        (value as Partial<ExperienceEntry>[]).filter(
+          (e) => (e.role?.trim() || e.company?.trim()) && (e.startDate?.trim() || e.endDate?.trim())
         ),
-      education: (value: any[]) =>
-        value.filter((e) => e.degree?.trim() || e.institution?.trim()),
-      skills: (value: any[]) => value.filter((skill) => skill?.name?.trim()),
-      languages: (value: any[]) => value.filter((lang) => lang?.name?.trim()),
-      certifications: (value: any[]) =>
-        value.filter((cert) => cert?.name?.trim() && cert?.issuer?.trim()),
-      projects: (value: any[]) => value.filter((proj) => proj?.name?.trim()),
+      education: (value: unknown[]) =>
+        (value as Partial<EducationEntry>[]).filter((e) => e.degree?.trim() || e.institution?.trim()),
+      skills: (value: unknown[]) => (value as Partial<SkillEntry>[]).filter((skill) => skill?.name?.trim()),
+      languages: (value: unknown[]) => (value as Partial<LanguageEntry>[]).filter((lang) => lang?.name?.trim()),
+      certifications: (value: unknown[]) =>
+        (value as Partial<CertificationEntry>[]).filter((cert) => cert?.name?.trim() && cert?.issuer?.trim()),
+      projects: (value: unknown[]) => (value as Partial<ProjectEntry>[]).filter((proj) => proj?.name?.trim()),
     };
 
-    const setFields: Record<string, any> = {};
+    const setFields: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(updates)) {
       if (value === undefined) continue;
 
@@ -174,7 +175,7 @@ export class AuthService {
 
       logger.info(`User profile updated: ${userId}`);
       return user;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`Error updating user profile ${userId}:`, error);
       throw error;
     }
@@ -187,7 +188,7 @@ export class AuthService {
         role: UserRole;
       };
       return decoded;
-    } catch (error: any) {
+    } catch (error: unknown) {
       throw new Error('Invalid or expired token');
     }
   }

@@ -28,9 +28,10 @@ export class FileService {
         default:
           throw new Error(`Unsupported file type: ${fileType}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error(`File parsing error for ${fileName}:`, error);
-      throw new Error(`Failed to parse ${fileType.toUpperCase()} file: ${error.message}`);
+      throw new Error(`Failed to parse ${fileType.toUpperCase()} file: ${message}`);
     }
   }
 
