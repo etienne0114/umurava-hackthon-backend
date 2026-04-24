@@ -1,4 +1,4 @@
-import { getGeminiModel, geminiRateLimiter, retryWithBackoff } from '../config/gemini';
+import { getGeminiModel, geminiRateLimiter, retryWithBackoff, geminiCircuitBreaker, performanceMonitor } from '../config/gemini';
 import { generateWithOpenRouter, isOpenRouterConfigured } from '../config/openrouter';
 import { IJob } from '../models/Job';
 import { IApplicant } from '../models/Applicant';
@@ -75,6 +75,10 @@ export class GeminiService {
   private model = getGeminiModel();
   private cache = new Map<string, { data: CandidateEvaluation; expiresAt: number }>();
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  
+  // Request deduplication cache
+  private requestCache = new Map<string, { promise: Promise<any>; expiresAt: number }>();
+  private readonly REQUEST_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
     if (!isOpenRouterConfigured()) {
@@ -86,6 +90,16 @@ export class GeminiService {
         `OpenRouter fallback enabled with model: ${process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'}`
       );
     }
+
+    // Clean up expired request cache entries every minute
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of this.requestCache.entries()) {
+        if (entry.expiresAt < now) {
+          this.requestCache.delete(key);
+        }
+      }
+    }, 60000);
   }
 
   private isGeminiQuotaError(error: unknown): boolean {
@@ -101,16 +115,92 @@ export class GeminiService {
   }
 
   private async generateWithGeminiThenFallback(
-    prompt: string
+    prompt: string,
+    sessionId?: string,
+    requestType: 'health' | 'content' | 'test' | 'batch' = 'content'
   ): Promise<{ text: string; provider: 'gemini' | 'openrouter'; model: string }> {
+    // Request deduplication - create hash of prompt for caching
+    const promptHash = this.hashPrompt(prompt);
+    const requestKey = `${requestType}:${promptHash}`;
+    
+    // Check if identical request is already in progress
+    const existingRequest = this.requestCache.get(requestKey);
+    if (existingRequest && existingRequest.expiresAt > Date.now()) {
+      logger.debug(`Deduplicating ${requestType} request with hash ${promptHash.substring(0, 8)}`);
+      return existingRequest.promise;
+    }
+
+    // Progressive timeout strategy based on request type
+    const timeouts = {
+      health: 15000,    // 15 seconds for health checks
+      content: 30000,   // 30 seconds for content generation
+      test: 10000,      // 10 seconds for test requests
+      batch: 60000      // 60 seconds for batch operations
+    };
+
+    const timeout = timeouts[requestType];
+
+    const requestPromise = this.executeRequest(prompt, sessionId, timeout, requestType);
+    
+    // Cache the promise to deduplicate concurrent requests
+    this.requestCache.set(requestKey, {
+      promise: requestPromise,
+      expiresAt: Date.now() + this.REQUEST_CACHE_TTL
+    });
+
     try {
-      const result = await this.model.generateContent(prompt);
+      const result = await requestPromise;
+      return result;
+    } finally {
+      // Remove from request cache after completion
+      this.requestCache.delete(requestKey);
+    }
+  }
+
+  private hashPrompt(prompt: string): string {
+    // Simple hash function for prompt deduplication
+    let hash = 0;
+    for (let i = 0; i < prompt.length; i++) {
+      const char = prompt.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  private async executeRequest(
+    prompt: string,
+    sessionId: string | undefined,
+    timeout: number,
+    requestType: string
+  ): Promise<{ text: string; provider: 'gemini' | 'openrouter'; model: string }> {
+    const startTime = Date.now();
+
+    try {
+      // Use adaptive timeout based on historical performance
+      const adaptiveTimeout = performanceMonitor.getAdaptiveTimeout('gemini', requestType, timeout);
+      
+      const result = await geminiCircuitBreaker.execute(async () => {
+        return Promise.race([
+          this.model.generateContent(prompt),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Gemini timeout after ${adaptiveTimeout}ms for ${requestType} request`)), adaptiveTimeout)
+          )
+        ]);
+      }, 'Gemini');
+      
+      const latency = Date.now() - startTime;
+      performanceMonitor.recordRequest('gemini', latency, true);
+      
       return {
-        text: result.response.text(),
+        text: (result as any).response.text(),
         provider: 'gemini',
-        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       };
     } catch (error: unknown) {
+      const latency = Date.now() - startTime;
+      performanceMonitor.recordRequest('gemini', latency, false);
+      
       const shouldFallback = this.isGeminiQuotaError(error);
       if (!shouldFallback) {
         throw error;
@@ -118,25 +208,112 @@ export class GeminiService {
 
       if (!isOpenRouterConfigured()) {
         logger.warn('Gemini quota/rate limit hit but OpenRouter fallback is not configured (missing OPENROUTER_API_KEY)');
+        
+        // Update session to track Gemini quota exhaustion
+        if (sessionId) {
+          await this.updateSessionProviderStatus(sessionId, {
+            geminiQuotaExhausted: true,
+            providerSwitchReason: 'Gemini quota exhausted, OpenRouter not configured'
+          });
+        }
+        
         throw error;
       }
 
       logger.warn('Gemini quota/rate limit reached, switching to OpenRouter fallback');
 
-      const fallback = await generateWithOpenRouter(
-        [{ role: 'user', content: prompt }],
-        process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'
-      );
+      // Update session to track provider switch
+      if (sessionId) {
+        await this.updateSessionProviderStatus(sessionId, {
+          currentProvider: 'openrouter',
+          fallbackCount: 1,
+          geminiQuotaExhausted: true,
+          lastProviderSwitch: new Date(),
+          providerSwitchReason: 'Gemini quota/rate limit exceeded'
+        });
+      }
 
-      return {
-        text: fallback.text,
-        provider: 'openrouter',
-        model: fallback.model,
-      };
+      try {
+        const fallbackStartTime = Date.now();
+        const fallback = await generateWithOpenRouter(
+          [{ role: 'user', content: prompt }],
+          process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2',
+          3 // 3 retries for OpenRouter
+        );
+
+        const fallbackLatency = Date.now() - fallbackStartTime;
+        performanceMonitor.recordRequest('openrouter', fallbackLatency, true);
+
+        logger.info('Successfully switched to OpenRouter fallback');
+        return {
+          text: fallback.text,
+          provider: 'openrouter',
+          model: fallback.model,
+        };
+      } catch (openrouterError: unknown) {
+        const fallbackStartTime = Date.now();
+        const fallbackLatency = Date.now() - fallbackStartTime;
+        performanceMonitor.recordRequest('openrouter', fallbackLatency, false);
+        
+        const openrouterMessage = openrouterError instanceof Error ? openrouterError.message : String(openrouterError);
+        
+        // Update session to track OpenRouter error
+        if (sessionId) {
+          await this.updateSessionProviderStatus(sessionId, {
+            openrouterErrors: 1,
+            providerSwitchReason: `OpenRouter failed: ${openrouterMessage}`
+          });
+        }
+
+        logger.error('Both Gemini and OpenRouter failed:', {
+          geminiError: error instanceof Error ? error.message : String(error),
+          openrouterError: openrouterMessage
+        });
+
+        // Throw a comprehensive error when both providers fail
+        throw new Error(`AI providers unavailable: Gemini (${error instanceof Error ? error.message : 'quota exceeded'}), OpenRouter (${openrouterMessage})`);
+      }
     }
   }
 
-  async evaluateCandidate(job: IJob, applicant: IApplicant): Promise<CandidateEvaluation> {
+  private async updateSessionProviderStatus(sessionId: string, updates: Partial<{
+    primaryProvider: 'gemini' | 'openrouter';
+    currentProvider: 'gemini' | 'openrouter';
+    fallbackCount: number;
+    geminiQuotaExhausted: boolean;
+    openrouterErrors: number;
+    lastProviderSwitch?: Date;
+    providerSwitchReason?: string;
+  }>) {
+    try {
+      const { ScreeningSession } = await import('../models/ScreeningSession.js');
+      
+      const setFields: Record<string, any> = {};
+      const incFields: Record<string, any> = {};
+      
+      Object.entries(updates).forEach(([key, value]) => {
+        if (key === 'fallbackCount' || key === 'openrouterErrors') {
+          incFields[`aiProviderStatus.${key}`] = value;
+        } else {
+          setFields[`aiProviderStatus.${key}`] = value;
+        }
+      });
+
+      const updateQuery: Record<string, any> = {};
+      if (Object.keys(setFields).length > 0) {
+        updateQuery.$set = setFields;
+      }
+      if (Object.keys(incFields).length > 0) {
+        updateQuery.$inc = incFields;
+      }
+
+      await ScreeningSession.findByIdAndUpdate(sessionId, updateQuery);
+    } catch (error) {
+      logger.error('Failed to update session provider status:', error);
+    }
+  }
+
+  async evaluateCandidate(job: IJob, applicant: IApplicant, sessionId?: string): Promise<CandidateEvaluation> {
     const cacheKey = `${job._id}-${applicant._id}`;
 
     const cached = this.cache.get(cacheKey);
@@ -148,12 +325,14 @@ export class GeminiService {
     try {
       const evaluation = await geminiRateLimiter.execute(async () => {
         return await retryWithBackoff(async () => {
-          return await this.performEvaluation(job, applicant);
+          return await this.performEvaluation(job, applicant, sessionId);
         }, 3, 1000);
       });
 
       this.cache.set(cacheKey, { data: evaluation, expiresAt: Date.now() + this.CACHE_TTL });
       setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+
+      logger.debug(`Successfully evaluated candidate ${applicant.profile?.name || applicant._id}: ${evaluation.matchScore}% (${evaluation.aiFallback ? 'fallback' : 'AI'})`);
 
       return evaluation;
     } catch (error: unknown) {
@@ -166,6 +345,7 @@ export class GeminiService {
         : `Gemini evaluation encountered an issue (${message}). A neutral score has been assigned - please regenerate screening for accurate results.`;
 
       logger.warn(`AI provider fallback failed for candidate ${applicant._id}: ${message}`);
+      logger.warn(`Fallback scoring applied: 50% for candidate ${applicant.profile?.name || applicant._id}`);
       return {
         matchScore: 50,
         strengths: ['AI Evaluation temporarily unavailable'],
@@ -179,9 +359,9 @@ export class GeminiService {
     }
   }
 
-  private async performEvaluation(job: IJob, applicant: IApplicant): Promise<CandidateEvaluation> {
+  private async performEvaluation(job: IJob, applicant: IApplicant, sessionId?: string): Promise<CandidateEvaluation> {
     const prompt = buildEvaluationPrompt(job, applicant);
-    const generated = await this.generateWithGeminiThenFallback(prompt);
+    const generated = await this.generateWithGeminiThenFallback(prompt, sessionId, 'content');
     const text = generated.text;
 
     const parsed = parseGeminiResponse(text);
@@ -241,7 +421,8 @@ export class GeminiService {
 
   async evaluateCandidatesBatch(
     job: IJob,
-    applicants: IApplicant[]
+    applicants: IApplicant[],
+    sessionId?: string
   ): Promise<Array<{ applicantId: string; evaluation: CandidateEvaluation }>> {
     if (applicants.length === 0) return [];
 
@@ -249,7 +430,7 @@ export class GeminiService {
       const prompt = buildBatchEvaluationPrompt(job, applicants);
       const generated = await geminiRateLimiter.execute(async () => {
         return await retryWithBackoff(async () => {
-          return await this.generateWithGeminiThenFallback(prompt);
+          return await this.generateWithGeminiThenFallback(prompt, sessionId, 'batch');
         }, 3, 1000);
       });
 
@@ -262,7 +443,7 @@ export class GeminiService {
       for (const applicant of applicants) {
         const item = byId.get(applicant._id.toString());
         if (!item) {
-          const fallback = await this.evaluateCandidate(job, applicant);
+          const fallback = await this.evaluateCandidate(job, applicant, sessionId);
           results.push({ applicantId: applicant._id.toString(), evaluation: fallback });
           continue;
         }
@@ -299,7 +480,7 @@ export class GeminiService {
       logger.warn(`Batch evaluation failed, falling back to per-candidate: ${message}`);
       const results: Array<{ applicantId: string; evaluation: CandidateEvaluation }> = [];
       for (const applicant of applicants) {
-        const evaluation = await this.evaluateCandidate(job, applicant);
+        const evaluation = await this.evaluateCandidate(job, applicant, sessionId);
         results.push({ applicantId: applicant._id.toString(), evaluation });
       }
       return results;
@@ -359,7 +540,7 @@ CV TEXT:
 ${cvText.slice(0, 8000)}
 ---`;
 
-          const generated = await this.generateWithGeminiThenFallback(prompt);
+          const generated = await this.generateWithGeminiThenFallback(prompt, undefined, 'content');
           const text = generated.text.trim();
 
           // Extract JSON from response
@@ -389,12 +570,12 @@ ${cvText.slice(0, 8000)}
     }
   }
 
-  async batchEvaluate(job: IJob, applicants: IApplicant[]): Promise<CandidateEvaluation[]> {
+  async batchEvaluate(job: IJob, applicants: IApplicant[], sessionId?: string): Promise<CandidateEvaluation[]> {
     const evaluations: CandidateEvaluation[] = [];
 
     for (const applicant of applicants) {
       try {
-        const evaluation = await this.evaluateCandidate(job, applicant);
+        const evaluation = await this.evaluateCandidate(job, applicant, sessionId);
         evaluations.push(evaluation);
       } catch (error: unknown) {
         const err = error as { status?: number };
@@ -467,7 +648,7 @@ Return ONLY a valid JSON array - no markdown fences, no extra text:
   }
 ]`;
 
-          const generated = await this.generateWithGeminiThenFallback(prompt);
+          const generated = await this.generateWithGeminiThenFallback(prompt, undefined, 'test');
           const text = generated.text.trim();
 
           const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -556,7 +737,7 @@ ${JSON.stringify(
       2
     )}`;
 
-    const generated = await this.generateWithGeminiThenFallback(prompt);
+    const generated = await this.generateWithGeminiThenFallback(prompt, undefined, 'test');
     const text = generated.text.trim();
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
