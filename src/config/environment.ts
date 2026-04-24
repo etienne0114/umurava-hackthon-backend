@@ -17,10 +17,10 @@ export const config = {
     process.env.CORS_ORIGIN ||
     process.env.CORS_ALLOWED_ORIGINS?.split(',')[0] ||
     '',
-  openRouterAppName: process.env.OPENROUTER_APP_NAME || 'Umurava Recruit',
-  umuravaApiUrl: process.env.UMURAVA_API_URL || 'https://api.umurava.africa',
+  openRouterAppName: process.env.OPENROUTER_APP_NAME || 'AI Recruiter',
+  umuravaApiUrl: process.env.UMURAVA_API_URL || 'https://api.platform.africa',
   umuravaApiKey: process.env.UMURAVA_API_KEY || '',
-  jwtSecret: process.env.JWT_SECRET || 'default-secret-change-in-production',
+  jwtSecret: process.env.JWT_SECRET || 'dev-secret-keep-it-safe',
   corsOrigin: process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000',
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10),
   uploadDir: process.env.UPLOAD_DIR || 
@@ -35,9 +35,15 @@ export const validateConfig = (): void => {
   }
   
   const requiredVars = ['GEMINI_API_KEY'];
+  
+  // Strict requirements for production
+  if (process.env.NODE_ENV === 'production') {
+    requiredVars.push('MONGODB_URI', 'JWT_SECRET', 'OPENROUTER_API_KEY');
+  }
+
   const missing = requiredVars.filter((varName) => !process.env[varName]);
 
   if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    throw new Error(`CRITICAL: Missing required environment variables: ${missing.join(', ')}`);
   }
 };
