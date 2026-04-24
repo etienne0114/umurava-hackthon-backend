@@ -374,56 +374,61 @@ export class TalentController {
         return;
       }
 
-      // Step 2: Use Gemini AI to extract structured profile data, fall back to text parser
+      // Step 2: Use AI to extract structured profile data, fall back to text parser
       let extracted;
-      let parsedBy = 'gemini';
+      let engines: string[] = [];
+      let extractionModel = 'none';
+
       try {
-        extracted = await geminiService.parseResume(cvText);
+        const result = await geminiService.parseResume(cvText);
+        extracted = result.data;
+        engines.push(result.provider === 'gemini' ? 'ai' : 'openrouter');
+        extractionModel = result.model;
       } catch (geminiErr: any) {
-        // Fall back to text parser for any Gemini failure: quota, model not found, network, etc.
-        logger.warn(`Gemini unavailable for user ${userId} (${geminiErr.message?.slice(0, 80)}) — falling back to text parser`);
+        // Fall back to text parser for any AI failure: quota, circuit breaker, etc.
+        logger.warn(`AI Resume parsing failed for user ${userId} (${geminiErr.message?.slice(0, 80)}) — falling back to text parser`);
         extracted = parseResumeText(cvText);
-        parsedBy = 'text-fallback';
+        engines.push('nlp');
+        extractionModel = 'compromise-nlp';
       }
 
       // Step 3: Build the $set update — only overwrite fields that were found
-      // Filter arrays to only include entries with all required fields to avoid Mongoose validation errors
-      // ParsedResumeProfile only has {title, company, duration, description?} for experience
-      // and {degree, institution, year} for education — map only those fields.
       const validExperience = (extracted.experience || []).map((entry: any) => ({
         role: (entry.role || '').trim() || 'Role',
         company: (entry.company || '').trim() || 'Unknown',
-        startDate: entry.startDate,
-        endDate: entry.endDate,
-        description: entry.description,
-        technologies: entry.technologies || [],
-        isCurrent: entry.isCurrent || false,
+        duration: entry.duration || '',
+        startDate: entry.startDate || '',
+        endDate: entry.endDate || '',
+        description: (entry.description || '').trim(),
+        technologies: Array.isArray(entry.technologies) ? entry.technologies : [],
+        isCurrent: Boolean(entry.isCurrent),
       })).filter(
-        (e) => e.role !== 'Role' || e.company !== 'Unknown'
+        (e) => e.role !== 'Role' && e.company !== 'Unknown'
       );
+
       const validEducation = (extracted.education || []).map((entry: any) => {
-        const startYear = parseInt(entry.startYear || '', 10);
-        const endYear = parseInt(entry.endYear || '', 10);
+        const startYear = entry.startYear ? parseInt(String(entry.startYear), 10) : NaN;
+        const endYear = entry.endYear ? parseInt(String(entry.endYear), 10) : NaN;
         return {
           degree: (entry.degree || '').trim() || 'Degree',
           institution: (entry.institution || '').trim() || 'Institution',
-          fieldOfStudy: entry.fieldOfStudy,
+          fieldOfStudy: (entry.fieldOfStudy || '').trim(),
           startYear: isNaN(startYear) ? undefined : startYear,
           endYear: isNaN(endYear) ? undefined : endYear,
         };
       }).filter(
-        (e) => e.degree !== 'Degree' || e.institution !== 'Institution'
+        (e) => e.degree !== 'Degree' && e.institution !== 'Institution'
       );
 
       const skillEntries = (extracted.skills || []).map((name: string) => ({
-        name,
+        name: String(name).trim(),
         level: 'Intermediate' as const,
-      }));
+      })).filter((s: any) => s.name);
 
       const languageEntries = (extracted.languages || []).map((lang: any) => ({
         name: typeof lang === 'string' ? lang : (lang.name || 'Language'),
         proficiency: typeof lang === 'object' ? (lang.proficiency || 'Conversational') : 'Conversational',
-      }));
+      })).filter((l: any) => l.name && l.name !== 'Language');
 
       const setFields: Record<string, unknown> = {};
 
@@ -433,15 +438,21 @@ export class TalentController {
       if (extracted.lastName) {
         setFields['profile.lastName'] = extracted.lastName;
       }
+      
+      // Always update name if we have at least one part
       if (extracted.firstName || extracted.lastName) {
-        setFields['profile.name'] = `${extracted.firstName || ''} ${extracted.lastName || ''}`.trim();
+        const fullName = `${extracted.firstName || ''} ${extracted.lastName || ''}`.trim();
+        if (fullName) setFields['profile.name'] = fullName;
       }
+
       if (extracted.headline) {
         setFields['profile.headline'] = extracted.headline;
       }
+      
       if ((extracted as any).location) {
         setFields['profile.location'] = (extracted as any).location;
       }
+      
       if (extracted.bio) setFields['profile.bio'] = extracted.bio.slice(0, 500);
       if (extracted.phone) setFields['profile.phone'] = extracted.phone;
       if (skillEntries.length) setFields['profile.skills'] = skillEntries;
@@ -474,18 +485,18 @@ export class TalentController {
         return;
       }
 
-      logger.info(`Resume parsed for user ${userId} via ${parsedBy}: ${extracted.skills.length} skills, ${extracted.experience.length} experience entries`);
+      logger.info(`Resume parsed for user ${userId} via ${engines.join('+')} (${extractionModel}): ${skillEntries.length} skills, ${validExperience.length} experience entries`);
 
       res.json({
         success: true,
         data: {
           user: updatedUser,
           extracted,
-          parsedBy,
-          engines: ['AI-Gemini', 'NLP-Compromise', 'Mammoth-Docx', 'PDF-Parse'],
+          extractionModel,
+          engines,
         },
-        message: parsedBy === 'gemini'
-          ? 'Resume parsed by AI and profile updated successfully'
+        message: engines.includes('ai') || engines.includes('openrouter')
+          ? `Resume parsed by AI (${extractionModel}) and profile updated successfully`
           : 'Resume parsed and profile updated (AI unavailable — parsed from text via NLP)',
       });
     } catch (error: any) {
