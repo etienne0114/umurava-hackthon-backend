@@ -1,12 +1,4 @@
-/**
- * Fallback CV/resume parser — works purely with text, no AI required.
- * Called when Gemini is rate-limited or unavailable.
- *
- * Handles common PDF parsing artifacts:
- * - Concatenated skill chips (ReactTailwindTypeScript → React, Tailwind, TypeScript)
- * - Social links / profile IDs appearing in skill sections
- * - Location lines (Kigali, Rwanda) used instead of job titles
- */
+import nlp from 'compromise';
 
 export interface ParsedResumeProfile {
   firstName: string;
@@ -15,7 +7,7 @@ export interface ParsedResumeProfile {
   bio: string;
   phone: string;
   skills: string[];
-  languages: string[];
+  languages: Array<{ name: string; proficiency: string }>;
   experience: Array<{ role: string; company: string; duration: string; description?: string }>;
   education: Array<{ degree: string; institution: string; year: string }>;
 }
@@ -118,18 +110,26 @@ export function parseResumeText(text: string): ParsedResumeProfile {
     .filter(p => !/^\d{4}\s*[-–]\s*\d{4}$/.test(p) && !/^\d{4}$/.test(p));
   const phone = phoneMatches[0] || '';
 
-  // ── Name (first non-email, non-phone, non-CV-header line ≤ 4 words) ─────────
+  // ── Name extraction with NLP and line-based heuristics ──────────────────────
   let name = '';
-  for (const line of lines.slice(0, 10)) {
-    if (EMAIL_RE.test(line)) continue;
-    if (PHONE_RE.test(line)) continue;
-    if (/^(curriculum vitae|resume|cv)$/i.test(line)) continue;
-    if (/\d/.test(line)) continue;
-    if (LOCATION_RE.test(line)) continue;
-    const wordCount = line.split(/\s+/).length;
-    if (wordCount >= 1 && wordCount <= 5) {
-      name = line;
-      break;
+  const topText = lines.slice(0, 15).join(' ');
+  const doc = nlp(topText);
+  const people = doc.people().json() as any[];
+  
+  if (people.length > 0) {
+    name = people[0].text || people[0].normal;
+  } else {
+    for (const line of lines.slice(0, 10)) {
+      if (EMAIL_RE.test(line)) continue;
+      if (PHONE_RE.test(line)) continue;
+      if (/^(curriculum vitae|resume|cv)$/i.test(line)) continue;
+      if (/\d/.test(line)) continue;
+      if (LOCATION_RE.test(line)) continue;
+      const wordCount = line.split(/\s+/).length;
+      if (wordCount >= 1 && wordCount <= 5) {
+        name = line;
+        break;
+      }
     }
   }
 
@@ -195,7 +195,10 @@ export function parseResumeText(text: string): ParsedResumeProfile {
     rawLangs
       .map(s => s.replace(PROFICIENCY_RE, '').replace(/[:\-–()]+/g, '').trim())
       .filter(s => s.length >= 2 && /^[A-Za-z]/.test(s) && !NON_SKILL_RE.test(s))
-  )].slice(0, 10);
+  )].slice(0, 10).map(name => ({
+    name,
+    proficiency: 'Conversational'
+  }));
 
   // ── Bio / summary ────────────────────────────────────────────────────────────
   // Clean up concatenated words in bio too

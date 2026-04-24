@@ -550,16 +550,52 @@ ${cvText.slice(0, 8000)}
           const parsed = JSON.parse(jsonMatch[0]);
 
           return {
-            firstName: parsed.firstName || '',
-            lastName: parsed.lastName || '',
-            headline: parsed.headline || '',
-            location: parsed.location || '',
-            bio: parsed.bio || '',
-            phone: parsed.phone || '',
-            skills: Array.isArray(parsed.skills) ? parsed.skills.filter(Boolean) : [],
-            languages: Array.isArray(parsed.languages) ? parsed.languages : [],
-            experience: Array.isArray(parsed.experience) ? parsed.experience.slice(0, 5) : [],
-            education: Array.isArray(parsed.education) ? parsed.education.slice(0, 3) : [],
+            firstName: String(parsed.firstName || '').trim(),
+            lastName: String(parsed.lastName || '').trim(),
+            headline: String(parsed.headline || '').trim(),
+            location: String(parsed.location || '').trim(),
+            bio: String(parsed.bio || '').trim(),
+            phone: String(parsed.phone || '').trim(),
+            skills: Array.isArray(parsed.skills) 
+              ? parsed.skills.map((s: any) => typeof s === 'string' ? s : String(s?.name || s)).filter(Boolean)
+              : [],
+            languages: Array.isArray(parsed.languages) 
+              ? parsed.languages.map((l: any) => {
+                  const name = typeof l === 'string' ? l : String(l?.name || '');
+                  let proficiency = typeof l === 'object' ? String(l?.proficiency || 'Conversational') : 'Conversational';
+                  
+                  // Map AI proficiency to our enum
+                  const validProficiencies = ['Basic', 'Conversational', 'Fluent', 'Native'];
+                  if (!validProficiencies.includes(proficiency)) {
+                    if (proficiency.includes('Native')) proficiency = 'Native';
+                    else if (proficiency.includes('Fluent')) proficiency = 'Fluent';
+                    else if (proficiency.includes('Conversational') || proficiency.includes('Intermediate')) proficiency = 'Conversational';
+                    else proficiency = 'Basic';
+                  }
+                  
+                  return { name, proficiency };
+                }).filter((l: { name: string; proficiency: string }) => l.name)
+              : [],
+            experience: Array.isArray(parsed.experience) 
+              ? parsed.experience.slice(0, 5).map((e: any) => ({
+                  role: String(e?.role || '').trim(),
+                  company: String(e?.company || '').trim(),
+                  startDate: String(e?.startDate || '').trim(),
+                  endDate: String(e?.endDate || '').trim(),
+                  description: String(e?.description || '').trim(),
+                  technologies: Array.isArray(e?.technologies) ? e.technologies.map(String) : [],
+                  isCurrent: Boolean(e?.isCurrent)
+                }))
+              : [],
+            education: Array.isArray(parsed.education) 
+              ? parsed.education.slice(0, 3).map((e: any) => ({
+                  degree: String(e?.degree || '').trim(),
+                  institution: String(e?.institution || '').trim(),
+                  fieldOfStudy: String(e?.fieldOfStudy || '').trim(),
+                  startYear: String(e?.startYear || '').trim(),
+                  endYear: String(e?.endYear || '').trim()
+                }))
+              : [],
           };
         }, 3, 1000);
       });
