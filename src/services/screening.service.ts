@@ -79,6 +79,13 @@ export class ScreeningService {
           batchMode: applicants.length >= this.BATCH_SIZE,
           batchSize: this.BATCH_SIZE,
         },
+        aiProviderStatus: {
+          primaryProvider: 'gemini',
+          currentProvider: 'gemini',
+          fallbackCount: 0,
+          geminiQuotaExhausted: false,
+          openrouterErrors: 0,
+        },
       });
 
       await session.save();
@@ -111,7 +118,7 @@ export class ScreeningService {
       for (let i = 0; i < applicants.length; i += batchSize) {
         const batch = applicants.slice(i, i + batchSize);
         try {
-          const batchResults = await geminiService.evaluateCandidatesBatch(job, batch);
+          const batchResults = await geminiService.evaluateCandidatesBatch(job, batch, sessionId);
           batchResults.forEach((result) => {
             evaluations.push({
               ...result.evaluation,
@@ -129,11 +136,14 @@ export class ScreeningService {
 
       const rankedResults = this.rankCandidates(evaluations, options);
 
+      logger.info(`Ranked ${rankedResults.length} candidates. Final ranking: ${rankedResults.map((r, i) => `#${i + 1}: ${r.matchScore}%`).join(', ')}`);
+
+      // Use sequential ranking (1, 2, 3, 4, 5...) - no duplicate numbers
       const screeningResults = rankedResults.map((result, index) => ({
         applicantId: result.applicantId,
         jobId: job._id,
         sessionId,
-        rank: index + 1,
+        rank: index + 1, // Sequential: 1, 2, 3, 4, 5... regardless of tied scores
         matchScore: result.matchScore,
         evaluation: {
           strengths: result.strengths,
@@ -147,7 +157,12 @@ export class ScreeningService {
         geminiResponse: result.geminiResponse,
       }));
 
-      await ScreeningResult.insertMany(screeningResults);
+      // Log final ranking with actual ranks
+      logger.info(`Final ranking assigned: ${screeningResults.map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
+
+      const finalResults = screeningResults;
+
+      await ScreeningResult.insertMany(finalResults);
 
       await ScreeningSession.findByIdAndUpdate(sessionId, {
         status: 'completed',
@@ -162,7 +177,7 @@ export class ScreeningService {
           job.createdBy.toString(),
           'success',
           'Screening Completed',
-          `AI screening for "${job.title}" has finished. ${screeningResults.length} candidates were ranked.`,
+          `AI screening for "${job.title}" has finished. ${finalResults.length} candidates were ranked.`,
           `/company/screening?jobId=${job._id}`
         );
       }
@@ -191,21 +206,108 @@ export class ScreeningService {
 
     const filtered = evaluations.filter((evaluation) => evaluation.matchScore >= minScore);
 
-    const sorted = filtered.sort((a, b) => b.matchScore - a.matchScore);
+    // Enhanced sorting: Primary by match score (descending), secondary by applicantId for stable sorting
+    const sorted = filtered.sort((a, b) => {
+      // Primary sort: match score (descending)
+      if (b.matchScore !== a.matchScore) {
+        return b.matchScore - a.matchScore;
+      }
+      
+      // Secondary sort: applicantId (ascending) for stable sorting when scores are equal
+      return a.applicantId.localeCompare(b.applicantId);
+    });
+
+    logger.info(`Ranking ${filtered.length} candidates. Top scores: ${sorted.slice(0, 5).map(s => `${s.matchScore}%`).join(', ')}`);
 
     return sorted.slice(0, topN);
   }
 
   async getScreeningResults(jobId: string, limit: number = 20): Promise<IScreeningResult[]> {
     try {
-      return await ScreeningResult.find({ jobId })
-        .sort({ rank: 1 })
+      // Find the latest completed session for this job to avoid mixing duplicates
+      const latestSession = await ScreeningSession.findOne({ 
+        jobId, 
+        status: 'completed' 
+      }).sort({ createdAt: -1 });
+
+      const query = latestSession ? { jobId, sessionId: latestSession._id } : { jobId };
+
+      const results = await ScreeningResult.find(query)
+        .sort({ rank: 1 }) // Primary sort by rank
         .limit(limit)
         .populate('applicantId');
+      
+      // Validate ranking integrity and fix if needed
+      const hasRankingIssues = this.validateAndFixRanking(results);
+      if (hasRankingIssues) {
+        logger.warn(`Fixed ranking issues for job ${jobId}`);
+        // Await a brief moment to allow async bulkWrite to initiate/complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // Re-fetch after fixing
+        const fixedResults = await ScreeningResult.find(query)
+          .sort({ rank: 1 })
+          .limit(limit)
+          .populate('applicantId');
+        
+        logger.info(`Retrieved ${fixedResults.length} screening results for job ${jobId} (after ranking fix). Top scores: ${fixedResults.slice(0, 3).map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
+        return fixedResults;
+      }
+      
+      logger.debug(`Retrieved ${results.length} screening results for job ${jobId}. Top scores: ${results.slice(0, 3).map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
+      
+      return results;
     } catch (error: unknown) {
       logger.error(`Error fetching screening results for job ${jobId}:`, error);
       throw error;
     }
+  }
+
+  private validateAndFixRanking(results: IScreeningResult[]): boolean {
+    if (results.length === 0) return false;
+
+    // Check if ranks are sequential (1, 2, 3, 4, 5...)
+    const expectedRanks = results.map((_, index) => index + 1);
+    const actualRanks = results.map(r => r.rank);
+    const hasIssues = !expectedRanks.every((expected, index) => expected === actualRanks[index]);
+
+    if (hasIssues) {
+      logger.warn(`Ranking validation failed. Expected: [${expectedRanks.slice(0, 5).join(', ')}...], Actual: [${actualRanks.slice(0, 5).join(', ')}...]`);
+      
+      // Fix ranking by re-sorting by match score and assigning sequential ranks
+      const sortedByScore = [...results].sort((a, b) => {
+        // Primary sort: match score (descending)
+        if (b.matchScore !== a.matchScore) {
+          return b.matchScore - a.matchScore;
+        }
+        // Secondary sort: applicantId for stable sorting
+        const getApplicantIdStr = (appId: unknown) => {
+          if (!appId) return '';
+          if (typeof appId === 'string') return appId;
+          if (typeof appId === 'object' && appId !== null && '_id' in appId) return String((appId as { _id: unknown })._id);
+          return String(appId);
+        };
+        const aId = getApplicantIdStr(a.applicantId);
+        const bId = getApplicantIdStr(b.applicantId);
+        return aId.localeCompare(bId);
+      });
+
+      // Update ranks in database
+      const bulkOps = sortedByScore.map((result, index) => ({
+        updateOne: {
+          filter: { _id: result._id },
+          update: { $set: { rank: index + 1 } }
+        }
+      }));
+
+      // Execute bulk update asynchronously (don't block the response)
+      ScreeningResult.bulkWrite(bulkOps).catch((error) => {
+        logger.error('Failed to fix ranking in database:', error);
+      });
+
+      return true;
+    }
+
+    return false;
   }
 
   async getScreeningStatus(sessionId: string): Promise<IScreeningSession | null> {
@@ -232,6 +334,47 @@ export class ScreeningService {
       return await this.startScreening(jobId);
     } catch (error: unknown) {
       logger.error('Error regenerating screening:', error);
+      throw error;
+    }
+  }
+
+  async fixRankingForJob(jobId: string): Promise<{ issuesFound: boolean; recordsUpdated: number }> {
+    try {
+      // Get all results for this job, sorted by match score (descending)
+      const results = await ScreeningResult.find({ jobId })
+        .sort({ matchScore: -1, _id: 1 }) // Sort by score desc, then by ID for stable sort
+        .lean();
+
+      if (results.length === 0) {
+        return { issuesFound: false, recordsUpdated: 0 };
+      }
+
+      // Check if ranks are already correct (sequential: 1, 2, 3, 4, 5...)
+      const expectedRanks = results.map((_, index) => index + 1);
+      const actualRanks = results.map(r => r.rank);
+      const ranksAreCorrect = expectedRanks.every((expected, index) => expected === actualRanks[index]);
+
+      if (ranksAreCorrect) {
+        logger.info(`Job ${jobId}: Rankings are already correct (${results.length} candidates)`);
+        return { issuesFound: false, recordsUpdated: 0 };
+      }
+
+      logger.warn(`Job ${jobId}: Found ranking issues! Expected: [${expectedRanks.slice(0, 5).join(', ')}...], Actual: [${actualRanks.slice(0, 5).join(', ')}...]`);
+
+      // Update ranks to be sequential
+      const bulkOps = results.map((result, index) => ({
+        updateOne: {
+          filter: { _id: result._id },
+          update: { $set: { rank: index + 1 } }
+        }
+      }));
+
+      const bulkResult = await ScreeningResult.bulkWrite(bulkOps);
+      logger.info(`Fixed ${bulkResult.modifiedCount} ranking records for job ${jobId}`);
+
+      return { issuesFound: true, recordsUpdated: bulkResult.modifiedCount };
+    } catch (error: unknown) {
+      logger.error(`Error fixing ranking for job ${jobId}:`, error);
       throw error;
     }
   }
