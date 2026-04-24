@@ -26,11 +26,13 @@ function detectMimeFromBuffer(buffer: Buffer): { mime: string } | null {
   }
   // ZIP-based (XLSX / DOCX): PK 03 04  (50 4B 03 04)
   if (buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04) {
-    return { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+    // Both XLSX and DOCX use the same magic number. For now, we return a generic ZIP mime
+    // and let the secondary validation handle it, or we check the extension if available.
+    return { mime: 'application/vnd.openxmlformats-officedocument' };
   }
   // OLE2 compound (XLS / DOC): D0 CF 11 E0
   if (buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0) {
-    return { mime: 'application/vnd.ms-excel' };
+    return { mime: 'application/msword' };
   }
   return null;
 }
@@ -40,9 +42,11 @@ function detectMimeFromBuffer(buffer: Buffer): { mime: string } | null {
  */
 const ALLOWED_FILE_SIGNATURES: Record<string, string[]> = {
   csv: ['text/plain', 'text/csv'],
-  xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-  xls: ['application/vnd.ms-excel'],
+  xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument'],
+  xls: ['application/vnd.ms-excel', 'application/msword'],
   pdf: ['application/pdf'],
+  docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument'],
+  doc: ['application/msword'],
   jpeg: ['image/jpeg'],
   jpg: ['image/jpeg'],
   png: ['image/png'],
@@ -52,7 +56,10 @@ const MIME_TO_TYPE: Record<string, string> = {
   'text/plain': 'csv',
   'text/csv': 'csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument': 'office-openxml',
   'application/vnd.ms-excel': 'xls',
+  'application/msword': 'doc',
   'application/pdf': 'pdf',
   'image/jpeg': 'jpeg',
   'image/png': 'png',
@@ -63,7 +70,7 @@ const MIME_TO_TYPE: Record<string, string> = {
  */
 export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean; type?: string; error?: string }> => {
   try {
-    // 1. Check for binary magic numbers (PDF, images, Excel) first
+    // 1. Check for binary magic numbers (PDF, images, Excel, Word) first
     const detectedType = detectMimeFromBuffer(buffer);
 
     if (detectedType) {
@@ -72,7 +79,7 @@ export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean
       if (!allowedMimes.includes(detectedType.mime)) {
         return {
           valid: false,
-          error: `File type ${detectedType.mime} is not allowed. Only CSV, Excel, PDF, and image files (JPEG, PNG) are accepted.`,
+          error: `File type ${detectedType.mime} is not allowed. Only CSV, Excel, Word, PDF, and images (JPEG, PNG) are accepted.`,
         };
       }
       return { valid: true, type: MIME_TO_TYPE[detectedType.mime] || detectedType.mime };
@@ -91,7 +98,7 @@ export const validateFileType = async (buffer: Buffer): Promise<{ valid: boolean
     logger.warn('File type detection failed after binary and text checks');
     return {
       valid: false,
-      error: 'Unable to determine file type. Please upload a PDF, CSV, Excel, or image file.',
+      error: 'Unable to determine file type. Please upload a PDF, DOCX, CSV, Excel, or image file.',
     };
   } catch (error) {
     logger.error('File type validation error:', error);
@@ -115,6 +122,8 @@ export const upload = multer({
       'text/plain',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
       'application/pdf',
       'image/jpeg',
       'image/jpg',
@@ -124,7 +133,7 @@ export const upload = multer({
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only CSV, Excel, PDF, and image files (JPEG, PNG) are allowed.'));
+      cb(new Error('Invalid file type. Only CSV, Excel, DOCX, PDF, and image files (JPEG, PNG) are allowed.'));
     }
   },
 });

@@ -2,11 +2,12 @@ import { parseCSV, parseExcel, ParsedApplicant } from '../utils/csvParser';
 import { parsePDF } from '../utils/pdfParser';
 import logger from '../utils/logger';
 
-export type FileType = 'csv' | 'excel' | 'pdf';
+export type FileType = 'csv' | 'excel' | 'pdf' | 'docx';
 
 export class FileService {
   private readonly MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for CSV/Excel
   private readonly MAX_PDF_SIZE = 5 * 1024 * 1024; // 5MB for PDF
+  private readonly MAX_DOCX_SIZE = 5 * 1024 * 1024; // 5MB for DOCX
 
   async parseFile(
     buffer: Buffer,
@@ -25,6 +26,11 @@ export class FileService {
           const parsed = await parsePDF(buffer);
           return [parsed];
         }
+        case 'docx': {
+          const { parseDOCX } = await import('../utils/docxParser.js');
+          const parsed = await parseDOCX(buffer);
+          return [parsed];
+        }
         default:
           throw new Error(`Unsupported file type: ${fileType}`);
       }
@@ -36,7 +42,9 @@ export class FileService {
   }
 
   validateFileSize(buffer: Buffer, fileType: FileType): void {
-    const maxSize = fileType === 'pdf' ? this.MAX_PDF_SIZE : this.MAX_FILE_SIZE;
+    let maxSize = this.MAX_FILE_SIZE;
+    if (fileType === 'pdf') maxSize = this.MAX_PDF_SIZE;
+    if (fileType === 'docx') maxSize = this.MAX_DOCX_SIZE;
     
     if (buffer.length > maxSize) {
       throw new Error(
@@ -52,6 +60,7 @@ export class FileService {
       csv: ['csv'],
       excel: ['xlsx', 'xls'],
       pdf: ['pdf'],
+      docx: ['docx', 'doc'],
     };
 
     return validExtensions[expectedType]?.includes(extension || '') || false;
@@ -63,6 +72,7 @@ export class FileService {
     if (extension === 'csv') return 'csv';
     if (extension === 'xlsx' || extension === 'xls') return 'excel';
     if (extension === 'pdf') return 'pdf';
+    if (extension === 'docx' || extension === 'doc') return 'docx';
     
     return null;
   }
