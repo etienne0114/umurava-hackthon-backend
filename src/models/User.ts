@@ -41,6 +41,14 @@ export interface IUser extends Document {
     socialLinks?: SocialLinks;
     resumeUrl?: string;
   };
+  notificationPreferences: {
+    masterEnabled: boolean;
+    screeningCompleted: boolean;
+    newApplicants: boolean;
+    assessmentSubmitted: boolean;
+    jobStatusChanged: boolean;
+    systemAlerts: boolean;
+  };
   isVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -268,6 +276,20 @@ const userSchema = new Schema<IUser>(
     isVerified: {
       type: Boolean,
       default: false,
+    },
+    notificationPreferences: {
+      type: new Schema(
+        {
+          masterEnabled:       { type: Boolean, default: true },
+          screeningCompleted:  { type: Boolean, default: true },
+          newApplicants:       { type: Boolean, default: true },
+          assessmentSubmitted: { type: Boolean, default: true },
+          jobStatusChanged:    { type: Boolean, default: true },
+          systemAlerts:        { type: Boolean, default: true },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
     },
   },
   {
