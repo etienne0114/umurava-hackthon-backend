@@ -1,0 +1,73 @@
+
+DAVID KIM, PhD
+Machine Learning Engineer
+
+Contact: david.kim@airesearch.com | +1-510-555-0104
+Portfolio: davidkim.ai | GitHub: github.com/davidkim
+
+PROFESSIONAL SUMMARY
+ML engineer with strong research background. Experienced in taking models from research 
+to production. Passionate about responsible AI and ethical ML practices. Published researcher 
+with 3 papers in top-tier conferences.
+
+TECHNICAL SKILLS
+Machine Learning:
+• Deep Learning: TensorFlow, PyTorch, Keras
+• Classical ML: Scikit-learn, XGBoost, LightGBM
+• NLP: Transformers, BERT, GPT, Hugging Face
+• Computer Vision: CNNs, Object Detection, Image Segmentation
+• Reinforcement Learning: OpenAI Gym, Stable Baselines
+
+MLOps & Production:
+• AWS SageMaker, Azure ML, GCP Vertex AI
+• MLflow, Weights & Biases, TensorBoard
+• Docker, Kubernetes, Airflow
+• Model Serving: TensorFlow Serving, TorchServe, FastAPI
+
+Data Science:
+• Python, R, SQL
+• Pandas, NumPy, SciPy
+• Jupyter, Databricks
+• A/B Testing, Statistical Analysis
+
+PROFESSIONAL EXPERIENCE
+
+Machine Learning Engineer | AI Labs Inc | San Francisco, CA
+March 2021 - Present
+• Built recommendation systems improving user engagement by 25% and revenue by $2M
+• Deployed ML models to production using AWS SageMaker with 99.9% uptime
+• Conducted A/B tests to validate model performance and business impact
+• Implemented MLOps pipelines for automated model training and deployment
+• Collaborated with product team to define ML use cases and success metrics
+• Mentored junior ML engineers on best practices and model development
+
+Research Assistant | Stanford AI Lab | Stanford, CA
+September 2019 - February 2021
+• Published 3 papers on neural networks and NLP in top-tier conferences (NeurIPS, ICML)
+• Developed novel architectures for text classification achieving state-of-the-art results
+• Collaborated with PhD students on research projects and paper writing
+• Presented research findings at academic conferences and workshops
+• Implemented research code in PyTorch and released open-source implementations
+
+EDUCATION
+
+PhD in Computer Science (Machine Learning)
+Carnegie Mellon University | 2021
+Dissertation: "Efficient Neural Architectures for Natural Language Understanding"
+Advisor: Prof. Jane Smith
+
+Master of Science in Computer Science
+Stanford University | 2019
+
+Bachelor of Science in Mathematics
+Massachusetts Institute of Technology (MIT) | 2017
+
+PUBLICATIONS
+1. Kim, D., et al. (2021). "Efficient Transformers for Text Classification." NeurIPS.
+2. Kim, D., et al. (2020). "Few-Shot Learning for NLP Tasks." ICML.
+3. Kim, D., et al. (2020). "Attention Mechanisms in Neural Networks." ACL.
+
+AWARDS & HONORS
+• Best Paper Award, NeurIPS 2021
+• NSF Graduate Research Fellowship, 2017-2020
+• MIT Presidential Scholar, 2013-2017

@@ -1,0 +1,54 @@
+
+MARCUS JOHNSON
+Backend Engineer
+
+Contact: marcus.j@devmail.com | +1-650-555-0102 | LinkedIn: /in/marcusjohnson
+
+SUMMARY
+Backend specialist with expertise in building high-performance distributed systems. 
+Passionate about infrastructure as code and DevOps practices. 7+ years of experience 
+in designing and implementing scalable microservices.
+
+SKILLS
+• Languages: Python, Go, SQL
+• Frameworks: Django, Flask, FastAPI
+• Databases: PostgreSQL, Redis, MongoDB
+• Cloud: AWS (ECS, RDS, ElastiCache), GCP
+• DevOps: Kubernetes, Docker, Terraform, Ansible
+• Monitoring: Prometheus, Grafana, ELK Stack
+• Message Queues: RabbitMQ, Kafka
+
+EXPERIENCE
+
+Backend Engineer | CloudSystems Ltd | Palo Alto, CA
+March 2019 - Present
+• Designed and implemented scalable microservices handling 10M+ requests daily
+• Optimized database queries and indexing, reducing response time by 40%
+• Led migration from monolith to microservices architecture on Kubernetes
+• Implemented caching strategies using Redis, reducing database load by 60%
+• Set up monitoring and alerting using Prometheus and Grafana
+• Conducted performance testing and optimization using load testing tools
+• Mentored junior developers on best practices and code quality
+
+Junior Developer | WebCo | San Jose, CA
+August 2017 - February 2019
+• Maintained legacy Django applications serving 100K+ users
+• Implemented new features and bug fixes based on user feedback
+• Participated in code reviews and improved code quality
+• Wrote unit tests and integration tests using pytest
+• Collaborated with frontend team on API design
+• Documented APIs using Swagger/OpenAPI
+
+EDUCATION
+
+Master of Science in Software Engineering
+Stanford University | 2017
+
+Bachelor of Science in Computer Science
+University of California, Berkeley | 2015
+
+ACHIEVEMENTS
+• Reduced infrastructure costs by 35% through optimization and right-sizing
+• Improved API response time from 500ms to 120ms average
+• Published technical blog posts with 50K+ views
+• Contributed to open-source projects: Django, FastAPI, Kubernetes

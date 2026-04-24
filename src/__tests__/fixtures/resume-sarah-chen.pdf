@@ -1,0 +1,57 @@
+
+SARAH CHEN
+Senior Full Stack Engineer
+
+Contact Information
+Email: sarah.chen@techmail.com
+Phone: +1-415-555-0101
+Location: San Francisco, CA
+
+PROFESSIONAL SUMMARY
+Passionate full-stack engineer with 6+ years of experience building scalable web applications. 
+Strong focus on clean code and test-driven development. Proven track record of leading teams 
+and delivering high-impact projects.
+
+TECHNICAL SKILLS
+Languages: JavaScript, TypeScript, Python
+Frontend: React, Redux, Next.js, Tailwind CSS
+Backend: Node.js, Express, GraphQL, REST APIs
+Databases: MongoDB, PostgreSQL, Redis
+Cloud & DevOps: AWS (EC2, S3, Lambda), Docker, Kubernetes, CI/CD
+Tools: Git, Jest, Webpack, Babel
+
+PROFESSIONAL EXPERIENCE
+
+Senior Full Stack Engineer | TechCorp Inc | San Francisco, CA
+January 2020 - Present
+• Led development of microservices architecture serving 2M+ users with 99.9% uptime
+• Implemented CI/CD pipelines using GitHub Actions, reducing deployment time by 60%
+• Mentored team of 5 junior developers, conducting code reviews and pair programming sessions
+• Architected real-time notification system using WebSockets and Redis pub/sub
+• Optimized database queries and API endpoints, improving response time by 45%
+• Collaborated with product team on feature planning and technical roadmap
+
+Software Engineer | StartupXYZ | San Francisco, CA
+June 2018 - December 2019
+• Built React applications with Redux for state management
+• Developed RESTful APIs using Node.js and Express
+• Implemented authentication and authorization using JWT
+• Collaborated with product team on feature planning and user stories
+• Participated in agile ceremonies and sprint planning
+• Wrote unit and integration tests achieving 85% code coverage
+
+EDUCATION
+
+Bachelor of Science in Computer Science
+Massachusetts Institute of Technology (MIT)
+Graduated: May 2018
+GPA: 3.8/4.0
+
+CERTIFICATIONS
+• AWS Certified Solutions Architect - Associate (2021)
+• MongoDB Certified Developer (2020)
+
+PROJECTS
+• Open Source Contributor: React, Node.js, TypeScript projects (500+ GitHub stars)
+• Personal Blog: Built with Next.js and deployed on Vercel
+• Tech Talks: Speaker at React Conf 2022 and Node.js Interactive 2021

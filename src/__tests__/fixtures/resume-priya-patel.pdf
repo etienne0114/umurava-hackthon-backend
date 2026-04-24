@@ -1,0 +1,83 @@
+
+PRIYA PATEL
+Data Engineer
+
+📧 priya.patel@dataeng.com | 📱 +1-408-555-0107
+🔗 linkedin.com/in/priyapatel | 💻 github.com/priyapatel
+
+PROFESSIONAL PROFILE
+Data engineer specializing in building reliable and scalable data infrastructure. 
+Experienced with modern data stack and best practices. 5+ years of experience 
+in data engineering and analytics.
+
+CORE COMPETENCIES
+
+Data Engineering:
+• Python, SQL, Scala
+• Apache Spark, Apache Airflow, dbt
+• ETL/ELT Pipelines, Data Modeling
+• Data Quality, Data Governance
+
+Cloud & Big Data:
+• AWS (S3, Redshift, EMR, Glue)
+• Snowflake, Databricks
+• BigQuery, Azure Synapse
+• Kafka, Kinesis
+
+Databases:
+• PostgreSQL, MySQL
+• MongoDB, Cassandra
+• Redis, Elasticsearch
+
+Tools & Practices:
+• Git, Docker, Kubernetes
+• CI/CD, Infrastructure as Code
+• Agile, Scrum
+• Data Visualization: Tableau, Looker
+
+PROFESSIONAL EXPERIENCE
+
+Data Engineer | DataCorp | San Francisco, CA
+April 2021 - Present
+• Built data pipelines processing 100TB+ daily with 99.9% reliability
+• Implemented data quality checks reducing errors by 80% and improving trust
+• Optimized ETL jobs improving performance by 3x and reducing costs by 40%
+• Designed dimensional data models for analytics and reporting
+• Migrated legacy ETL processes to modern data stack (Airflow + dbt + Snowflake)
+• Collaborated with data scientists and analysts on data requirements
+• Documented data pipelines and created data dictionaries
+
+Analytics Engineer | FinTech Startup | San Jose, CA
+June 2019 - March 2021
+• Developed SQL queries for business intelligence and reporting
+• Created dashboards in Tableau used by 50+ stakeholders
+• Maintained data warehouse and ensured data accuracy
+• Implemented dbt models for data transformation
+• Automated reporting processes saving 20 hours/week
+• Worked with product team to define metrics and KPIs
+
+EDUCATION
+
+Master of Science in Data Science
+University of California, Berkeley | 2019
+Relevant Coursework: Machine Learning, Big Data Analytics, Statistical Inference
+
+Bachelor of Science in Statistics
+University of California, Los Angeles (UCLA) | 2017
+
+CERTIFICATIONS
+• AWS Certified Data Analytics - Specialty (2022)
+• Snowflake SnowPro Core Certification (2021)
+• dbt Analytics Engineering Certification (2021)
+
+PROJECTS & CONTRIBUTIONS
+• Open Source: Contributor to Apache Airflow and dbt
+• Technical Blog: Published 20+ articles on data engineering
+• Mentorship: Mentored 5 junior data engineers through ADPList
+• Community: Organizer of Bay Area Data Engineering Meetup (500+ members)
+
+TECHNICAL ACHIEVEMENTS
+• Reduced data pipeline runtime from 8 hours to 2 hours
+• Improved data quality from 85% to 99% accuracy
+• Built real-time data pipeline processing 1M events/minute
+• Designed data architecture supporting 100+ data sources
