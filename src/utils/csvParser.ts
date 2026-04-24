@@ -12,6 +12,10 @@ export interface ParsedApplicant {
   education: EducationEntry[];
   summary?: string;
   rawText?: string;
+  firstName?: string;
+  lastName?: string;
+  headline?: string;
+  location?: string;
 }
 
 const normalizeKey = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -110,6 +114,11 @@ export const parseCSV = (buffer: Buffer): Promise<ParsedApplicant[]> => {
         ]));
 
         if (name && email) {
+          const firstName = asText(pickField(normalized, ['firstname', 'first name', 'first_name'])) || name.split(' ')[0] || '';
+          const lastName = asText(pickField(normalized, ['lastname', 'last name', 'last_name'])) || name.split(' ').slice(1).join(' ') || '';
+          const headline = asText(pickField(normalized, ['headline', 'title', 'position', 'job title', 'role'])) || 'Professional';
+          const location = asText(pickField(normalized, ['location', 'city', 'address', 'region'])) || 'Not specified';
+
           applicants.push({
             name,
             email: email.toLowerCase(),
@@ -118,6 +127,10 @@ export const parseCSV = (buffer: Buffer): Promise<ParsedApplicant[]> => {
             experience: parseExperienceString(pickField(normalized, ['experience', 'work experience', 'employment', 'work history'])),
             education: parseEducationString(pickField(normalized, ['education', 'degree', 'qualification', 'academic', 'school', 'university'])),
             summary: asText(pickField(normalized, ['summary', 'bio', 'about', 'profile', 'notes'])),
+            firstName,
+            lastName,
+            headline,
+            location,
           });
         }
       })
@@ -161,6 +174,11 @@ export const parseExcel = async (buffer: Buffer): Promise<ParsedApplicant[]> => 
       ]));
 
       if (name && email) {
+        const firstName = asText(pickField(normalized, ['firstname', 'first name', 'first_name'])) || name.split(' ')[0] || '';
+        const lastName = asText(pickField(normalized, ['lastname', 'last name', 'last_name'])) || name.split(' ').slice(1).join(' ') || '';
+        const headline = asText(pickField(normalized, ['headline', 'title', 'position', 'job title', 'role'])) || 'Professional';
+        const location = asText(pickField(normalized, ['location', 'city', 'address', 'region'])) || 'Not specified';
+
         applicants.push({
           name,
           email: email.toLowerCase(),
@@ -169,6 +187,10 @@ export const parseExcel = async (buffer: Buffer): Promise<ParsedApplicant[]> => 
           experience: parseExperienceString(pickField(normalized, ['experience', 'work experience', 'employment', 'work history'])),
           education: parseEducationString(pickField(normalized, ['education', 'degree', 'qualification', 'academic', 'school', 'university'])),
           summary: asText(pickField(normalized, ['summary', 'bio', 'about', 'profile', 'notes'])),
+          firstName,
+          lastName,
+          headline,
+          location,
         });
       }
     }

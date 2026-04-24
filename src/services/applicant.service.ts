@@ -104,6 +104,10 @@ export class ApplicantService {
             source: 'upload',
             profile: {
               name: parsed.name,
+              firstName: parsed.firstName || parsed.name.split(' ')[0] || 'Unknown',
+              lastName: parsed.lastName || parsed.name.split(' ').slice(1).join(' ') || 'Unknown',
+              headline: parsed.headline || 'Professional',
+              location: parsed.location || 'Not specified',
               email: parsed.email,
               phone: parsed.phone,
               skills: (parsed.skills || [])

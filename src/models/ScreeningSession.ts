@@ -13,6 +13,15 @@ export interface IScreeningSession extends Document {
     batchMode?: boolean;
     batchSize?: number;
   };
+  aiProviderStatus: {
+    primaryProvider: 'gemini' | 'openrouter';
+    currentProvider: 'gemini' | 'openrouter';
+    fallbackCount: number;
+    geminiQuotaExhausted: boolean;
+    openrouterErrors: number;
+    lastProviderSwitch?: Date;
+    providerSwitchReason?: string;
+  };
   error?: string;
   startedAt: Date;
   completedAt?: Date;
@@ -68,6 +77,32 @@ const ScreeningSessionSchema = new Schema<IScreeningSession>({
       min: [1, 'batchSize must be at least 1'],
       default: 1,
     },
+  },
+  aiProviderStatus: {
+    primaryProvider: {
+      type: String,
+      enum: ['gemini', 'openrouter'],
+      default: 'gemini',
+    },
+    currentProvider: {
+      type: String,
+      enum: ['gemini', 'openrouter'],
+      default: 'gemini',
+    },
+    fallbackCount: {
+      type: Number,
+      default: 0,
+    },
+    geminiQuotaExhausted: {
+      type: Boolean,
+      default: false,
+    },
+    openrouterErrors: {
+      type: Number,
+      default: 0,
+    },
+    lastProviderSwitch: Date,
+    providerSwitchReason: String,
   },
   error: String,
   startedAt: {
