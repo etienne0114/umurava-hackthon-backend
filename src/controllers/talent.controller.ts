@@ -415,14 +415,14 @@ export class TalentController {
         (e) => e.degree !== 'Degree' || e.institution !== 'Institution'
       );
 
-      const skillEntries = (extracted.skills || []).map((name) => ({
+      const skillEntries = (extracted.skills || []).map((name: string) => ({
         name,
         level: 'Intermediate' as const,
       }));
 
-      const languageEntries = (extracted.languages || []).map((name) => ({
-        name,
-        proficiency: 'Conversational' as const,
+      const languageEntries = (extracted.languages || []).map((lang: any) => ({
+        name: typeof lang === 'string' ? lang : (lang.name || 'Language'),
+        proficiency: typeof lang === 'object' ? (lang.proficiency || 'Conversational') : 'Conversational',
       }));
 
       const setFields: Record<string, unknown> = {};
@@ -482,10 +482,11 @@ export class TalentController {
           user: updatedUser,
           extracted,
           parsedBy,
+          engines: ['AI-Gemini', 'NLP-Compromise', 'Mammoth-Docx', 'PDF-Parse'],
         },
         message: parsedBy === 'gemini'
           ? 'Resume parsed by AI and profile updated successfully'
-          : 'Resume parsed and profile updated (AI unavailable — parsed from text)',
+          : 'Resume parsed and profile updated (AI unavailable — parsed from text via NLP)',
       });
     } catch (error: any) {
       logger.error('Resume upload error:', error);
