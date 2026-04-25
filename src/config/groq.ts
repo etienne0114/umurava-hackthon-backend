@@ -90,6 +90,36 @@ const groqCircuitBreaker = new GroqCircuitBreaker(
   120000  // windowSize: 2 minutes
 );
 
+// Limits concurrent Groq calls to 3 so a burst of fallback requests
+// doesn't hit the free-tier rate limit all at once.
+class GroqRateLimiter {
+  private activeRequests = 0;
+  private readonly maxConcurrent: number;
+  private queue: Array<() => void> = [];
+
+  constructor(maxConcurrent: number = 3) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.activeRequests >= this.maxConcurrent) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.activeRequests++;
+    try {
+      return await fn();
+    } finally {
+      this.activeRequests--;
+      if (this.queue.length > 0) {
+        const next = this.queue.shift();
+        if (next) next();
+      }
+    }
+  }
+}
+
+const groqRateLimiter = new GroqRateLimiter(3);
+
 const groqClient: AxiosInstance = axios.create({
   baseURL: config.groqBaseUrl,
   timeout: 180000, // 3 minutes — matches batch evaluation timeout
@@ -130,7 +160,7 @@ export const generateWithGroq = async (
     throw new Error('GROQ_API_KEY is not configured');
   }
 
-  return groqCircuitBreaker.execute(async () => {
+  return groqRateLimiter.execute(() => groqCircuitBreaker.execute(async () => {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -192,8 +222,10 @@ export const generateWithGroq = async (
             // Respect Groq's retry-after header if present, otherwise use longer backoff
             const retryAfterHeader = (axiosError?.response as any)?.headers?.['retry-after'];
             const retryAfterSeconds = retryAfterHeader ? parseFloat(retryAfterHeader) : null;
-            // Also parse "retry in Xs" from the error message body
-            const msgMatch = axiosError?.message?.match(/try again in (\d+(?:\.\d+)?)s/i);
+            // Parse "try again in Xs" from the Groq API response body (not the Axios wrapper message)
+            const groqApiMessage = ((axiosError?.response?.data as any)?.error?.message as string) || '';
+            const msgMatch = groqApiMessage.match(/try again in (\d+(?:\.\d+)?)s/i)
+              || axiosError?.message?.match(/try again in (\d+(?:\.\d+)?)s/i);
             const msgSeconds = msgMatch ? parseFloat(msgMatch[1]) : null;
             const waitSeconds = retryAfterSeconds ?? msgSeconds ?? null;
             baseDelay = waitSeconds
@@ -233,5 +265,5 @@ export const generateWithGroq = async (
       'Unknown Groq error';
 
     throw new Error(`Groq request failed after ${retries} attempts: ${details}`);
-  });
+  }));
 };

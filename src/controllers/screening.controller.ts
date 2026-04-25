@@ -140,14 +140,16 @@ export class ScreeningController {
         })()
       ]);
 
-      const geminiOk = healthStatus.gemini.status === 'healthy';
-      const groqOk   = healthStatus.groq.status === 'healthy';
-      const bothDown = healthStatus.gemini.status === 'unhealthy' && healthStatus.groq.status === 'unhealthy';
+      // 'degraded' = rate-limited but key is valid — still functional for screening
+      const geminiFunctional = healthStatus.gemini.status === 'healthy' || healthStatus.gemini.status === ('degraded' as any);
+      const groqFunctional   = healthStatus.groq.status === 'healthy'   || healthStatus.groq.status === ('degraded' as any);
+      const bothDown = !geminiFunctional && !groqFunctional;
 
-      if (geminiOk && groqOk) {
+      if (healthStatus.gemini.status === 'healthy' && healthStatus.groq.status === 'healthy') {
         healthStatus.overall = 'healthy';
-      } else if (geminiOk || groqOk) {
-        healthStatus.overall = 'degraded';
+      } else if (geminiFunctional || groqFunctional) {
+        // At least one provider can handle requests — screening will work
+        healthStatus.overall = geminiFunctional && !groqFunctional ? 'degraded' : 'degraded';
       } else if (bothDown) {
         healthStatus.overall = 'unhealthy';
       } else {

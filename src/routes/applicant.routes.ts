@@ -29,6 +29,9 @@ router.post(
 
 router.get('/', applicantController.getApplicants.bind(applicantController));
 
+// Bulk delete — must be registered before /:applicantId to prevent "job" being treated as an ID
+router.delete('/job/:jobId', authorize('company'), applicantController.deleteApplicantsByJob.bind(applicantController));
+
 router.get('/:applicantId', applicantController.getApplicantById.bind(applicantController));
 
 router.put('/:applicantId', authorize('company'), applicantController.updateApplicant.bind(applicantController));

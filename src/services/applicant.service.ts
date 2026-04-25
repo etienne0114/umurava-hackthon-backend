@@ -3,6 +3,9 @@ import { Applicant, IApplicant } from '../models/Applicant';
 import { Job } from '../models/Job';
 import { Application } from '../models/Application';
 import { User } from '../models/User';
+import { Assessment } from '../models/Assessment';
+import { ScreeningResult } from '../models/ScreeningResult';
+import { ScreeningSession } from '../models/ScreeningSession';
 import { fileService, FileType } from './file.service';
 import { umuravaService } from './umurava.service';
 import logger from '../utils/logger';
@@ -237,6 +240,35 @@ export class ApplicantService {
       return true;
     } catch (error: unknown) {
       logger.error(`Error deleting applicant ${applicantId}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteApplicantsByJob(jobId: string): Promise<number> {
+    try {
+      const filter = rawJobIdFilter(jobId);
+
+      // Collect applicant IDs for cascading cleanup
+      const applicantIds = await Applicant.find(filter).distinct('_id');
+
+      if (applicantIds.length === 0) return 0;
+
+      // Cascade: remove assessments and screening data tied to these applicants
+      await Promise.all([
+        Assessment.deleteMany({ applicantId: { $in: applicantIds } }),
+        ScreeningResult.deleteMany({ jobId }),
+        ScreeningSession.deleteMany({ jobId }),
+      ]);
+
+      const { deletedCount } = await Applicant.deleteMany(filter);
+
+      // Reset applicantCount on the job
+      await Job.findByIdAndUpdate(jobId, { applicantCount: 0, screeningStatus: 'not_started' });
+
+      logger.info(`Bulk deleted ${deletedCount} applicants for job ${jobId}`);
+      return deletedCount ?? 0;
+    } catch (error: unknown) {
+      logger.error(`Error bulk-deleting applicants for job ${jobId}:`, error);
       throw error;
     }
   }
