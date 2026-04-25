@@ -382,7 +382,7 @@ export class TalentController {
       try {
         const result = await geminiService.parseResume(cvText);
         extracted = result.data;
-        engines.push(result.provider === 'gemini' ? 'ai' : 'openrouter');
+        engines.push(result.provider === 'gemini' ? 'ai' : 'groq');
         extractionModel = result.model;
       } catch (geminiErr: any) {
         // Fall back to text parser for any AI failure: quota, circuit breaker, etc.
@@ -495,7 +495,7 @@ export class TalentController {
           extractionModel,
           engines,
         },
-        message: engines.includes('ai') || engines.includes('openrouter')
+        message: engines.includes('ai') || engines.includes('groq')
           ? `Resume parsed by AI (${extractionModel}) and profile updated successfully`
           : 'Resume parsed and profile updated (AI unavailable — parsed from text via NLP)',
       });

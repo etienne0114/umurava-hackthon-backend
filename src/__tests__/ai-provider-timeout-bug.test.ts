@@ -10,7 +10,7 @@
  */
 
 import * as fc from 'fast-check';
-import { testOpenRouterConnection } from '../config/openrouter';
+import { testGroqConnection } from '../config/groq';
 import { getGeminiModel } from '../config/gemini';
 import { screeningController } from '../controllers/screening.controller';
 import { Request, Response } from 'express';
@@ -115,10 +115,10 @@ describe('AI Provider Timeout Bug Exploration', () => {
                 
                 // Verify sub-15-second completion with "healthy" status (expected behavior)
                 const hasHealthyProvider = healthData.gemini?.status === 'healthy' || 
-                                         healthData.openrouter?.status === 'healthy';
+                                         healthData.groq?.status === 'healthy';
                 
                 if (!hasHealthyProvider) {
-                  throw new Error(`No healthy providers: Gemini=${healthData.gemini?.status}, OpenRouter=${healthData.openrouter?.status}`);
+                  throw new Error(`No healthy providers: Gemini=${healthData.gemini?.status}, Groq=${healthData.groq?.status}`);
                 }
                 
                 return { success: true, provider: hasHealthyProvider ? 'available' : 'none' };
@@ -249,27 +249,27 @@ describe('AI Provider Timeout Bug Exploration', () => {
     }
   }, 20000); // Reduced from 30s to 20s
 
-  test('OpenRouter provider should handle high latency without timeout', async () => {
+  test('Groq provider should handle high latency without timeout', async () => {
     const testConditions = {
-      latency: 250, // Reduced from 400ms to 250ms latency  
-      packetLoss: 0.3, // Reduced from 40% to 30% packet loss
-      concurrentRequests: 6 // Reduced from 12 to 6
+      latency: 250,
+      packetLoss: 0.3,
+      concurrentRequests: 6
     };
 
     try {
-      // Test OpenRouter under stress
-      const openRouterPromises = Array.from({ length: testConditions.concurrentRequests }, async () => {
+      // Test Groq under stress
+      const groqPromises = Array.from({ length: testConditions.concurrentRequests }, async () => {
         return NetworkSimulator.withNetworkStress(
           async () => {
             const result = await Promise.race([
-              testOpenRouterConnection(),
+              testGroqConnection(),
               new Promise<{ success: boolean; error?: string }>((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout after 10s')), 10000) // Reduced from 15s to 10s
+                setTimeout(() => reject(new Error('Timeout after 10s')), 10000)
               )
             ]);
             
             if (!result.success) {
-              throw new Error(result.error || 'OpenRouter connection failed');
+              throw new Error(result.error || 'Groq connection failed');
             }
             
             return result;
@@ -280,36 +280,35 @@ describe('AI Provider Timeout Bug Exploration', () => {
       });
 
       const startTime = Date.now();
-      const results = await Promise.allSettled(openRouterPromises);
+      const results = await Promise.allSettled(groqPromises);
       const duration = Date.now() - startTime;
 
       const failures = results.filter(r => r.status === 'rejected');
       
-      if (failures.length > 0 || duration > 12000) { // Reduced from 15s to 12s
+      if (failures.length > 0 || duration > 12000) {
         const errorMsg = failures.length > 0 
-          ? `${failures.length}/${testConditions.concurrentRequests} OpenRouter requests failed`
-          : `OpenRouter requests took ${duration}ms > 12000ms`;
+          ? `${failures.length}/${testConditions.concurrentRequests} Groq requests failed`
+          : `Groq requests took ${duration}ms > 12000ms`;
 
         counterExamples.push({
-          condition: 'OpenRouter high latency test',
+          condition: 'Groq high latency test',
           error: errorMsg,
           ...testConditions
         });
 
-        // This should FAIL on unfixed code
-        throw new Error(`OpenRouter timeout bug confirmed: ${errorMsg}`);
+        throw new Error(`Groq timeout bug confirmed: ${errorMsg}`);
       }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       
       counterExamples.push({
-        condition: 'OpenRouter provider stress test',
+        condition: 'Groq provider stress test',
         error: errorMessage,
         ...testConditions
       });
 
       throw error;
     }
-  }, 20000); // Reduced from 30s to 20s
+  }, 20000);
 });

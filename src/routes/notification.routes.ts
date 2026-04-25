@@ -4,9 +4,11 @@ import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/', authenticate, notificationController.getNotifications);
-router.patch('/:id/read', authenticate, notificationController.markAsRead);
-router.patch('/read-all', authenticate, notificationController.markAllAsRead);
-router.delete('/:id', authenticate, notificationController.deleteNotification);
+router.get('/',            authenticate, notificationController.getNotifications);
+router.get('/preferences', authenticate, notificationController.getPreferences);
+router.put('/preferences', authenticate, notificationController.updatePreferences);
+router.patch('/:id/read',  authenticate, notificationController.markAsRead);
+router.patch('/read-all',  authenticate, notificationController.markAllAsRead);
+router.delete('/:id',      authenticate, notificationController.deleteNotification);
 
 export default router;

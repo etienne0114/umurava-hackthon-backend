@@ -1,4 +1,4 @@
-import mammoth from 'mammoth';
+import mammoth = require('mammoth');
 import { ParsedApplicant } from './csvParser';
 import logger from '../utils/logger';
 

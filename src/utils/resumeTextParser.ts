@@ -1,4 +1,4 @@
-import nlp from 'compromise';
+import nlp = require('compromise');
 
 export interface ParsedResumeProfile {
   firstName: string;

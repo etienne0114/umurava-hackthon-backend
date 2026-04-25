@@ -1,5 +1,6 @@
 import { getGeminiModel, geminiRateLimiter, retryWithBackoff, geminiCircuitBreaker, performanceMonitor } from '../config/gemini';
-import { generateWithOpenRouter, isOpenRouterConfigured } from '../config/openrouter';
+import { generateWithGroq, isGroqConfigured } from '../config/groq';
+import { ScreeningSession } from '../models/ScreeningSession';
 import { IJob } from '../models/Job';
 import { IApplicant } from '../models/Applicant';
 import {
@@ -81,13 +82,13 @@ export class GeminiService {
   private readonly REQUEST_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
-    if (!isOpenRouterConfigured()) {
+    if (!isGroqConfigured()) {
       logger.warn(
-        'OpenRouter fallback is disabled: OPENROUTER_API_KEY is not set. Gemini quota errors will fall back to neutral scoring.'
+        'Groq fallback is disabled: GROQ_API_KEY is not set. Gemini quota errors will fall back to neutral scoring.'
       );
     } else {
       logger.info(
-        `OpenRouter fallback enabled with model: ${process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'}`
+        `Groq fallback enabled with model: ${process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'}`
       );
     }
 
@@ -120,7 +121,7 @@ export class GeminiService {
     prompt: string,
     sessionId?: string,
     requestType: 'health' | 'content' | 'test' | 'batch' = 'content'
-  ): Promise<{ text: string; provider: 'gemini' | 'openrouter'; model: string }> {
+  ): Promise<{ text: string; provider: 'gemini' | 'groq'; model: string }> {
     // Request deduplication - create hash of prompt for caching
     const promptHash = this.hashPrompt(prompt);
     const requestKey = `${requestType}:${promptHash}`;
@@ -134,10 +135,10 @@ export class GeminiService {
 
     // Progressive timeout strategy based on request type
     const timeouts = {
-      health: 15000,    // 15 seconds for health checks
-      content: 30000,   // 30 seconds for content generation
-      test: 10000,      // 10 seconds for test requests
-      batch: 60000      // 60 seconds for batch operations
+      health:  15000,   // 15 seconds for health checks
+      content: 60000,   // 60 seconds for single-candidate evaluation
+      test:    90000,   // 90 seconds for test generation (increased for reliability under load)
+      batch:   300000   // 5 minutes for batch evaluation (supports large applicant pools)
     };
 
     const timeout = timeouts[requestType];
@@ -175,7 +176,7 @@ export class GeminiService {
     sessionId: string | undefined,
     timeout: number,
     requestType: string
-  ): Promise<{ text: string; provider: 'gemini' | 'openrouter'; model: string }> {
+  ): Promise<{ text: string; provider: 'gemini' | 'groq'; model: string }> {
     const startTime = Date.now();
 
     try {
@@ -208,26 +209,24 @@ export class GeminiService {
         throw error;
       }
 
-      if (!isOpenRouterConfigured()) {
-        logger.warn('Gemini quota/rate limit hit but OpenRouter fallback is not configured (missing OPENROUTER_API_KEY)');
-        
-        // Update session to track Gemini quota exhaustion
+      if (!isGroqConfigured()) {
+        logger.warn('Gemini quota/rate limit hit but Groq fallback is not configured (missing GROQ_API_KEY)');
+
         if (sessionId) {
           await this.updateSessionProviderStatus(sessionId, {
             geminiQuotaExhausted: true,
-            providerSwitchReason: 'Gemini quota exhausted, OpenRouter not configured'
+            providerSwitchReason: 'Gemini quota exhausted, Groq not configured'
           });
         }
-        
+
         throw error;
       }
 
-      logger.warn('Gemini quota/rate limit reached, switching to OpenRouter fallback');
+      logger.warn('Gemini quota/rate limit reached, switching to Groq fallback');
 
-      // Update session to track provider switch
       if (sessionId) {
         await this.updateSessionProviderStatus(sessionId, {
-          currentProvider: 'openrouter',
+          currentProvider: 'groq',
           fallbackCount: 1,
           geminiQuotaExhausted: true,
           lastProviderSwitch: new Date(),
@@ -237,64 +236,59 @@ export class GeminiService {
 
       try {
         const fallbackStartTime = Date.now();
-        const fallback = await generateWithOpenRouter(
+        const fallback = await generateWithGroq(
           [{ role: 'user', content: prompt }],
-          process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2',
-          3 // 3 retries for OpenRouter
+          process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+          3
         );
 
         const fallbackLatency = Date.now() - fallbackStartTime;
-        performanceMonitor.recordRequest('openrouter', fallbackLatency, true);
+        performanceMonitor.recordRequest('groq', fallbackLatency, true);
 
-        logger.info('Successfully switched to OpenRouter fallback');
+        logger.info('Successfully switched to Groq fallback');
         return {
           text: fallback.text,
-          provider: 'openrouter',
+          provider: 'groq',
           model: fallback.model,
         };
-      } catch (openrouterError: unknown) {
-        const fallbackStartTime = Date.now();
-        const fallbackLatency = Date.now() - fallbackStartTime;
-        performanceMonitor.recordRequest('openrouter', fallbackLatency, false);
-        
-        const openrouterMessage = openrouterError instanceof Error ? openrouterError.message : String(openrouterError);
-        
-        // Update session to track OpenRouter error
+      } catch (groqError: unknown) {
+        const fallbackLatency = 0;
+        performanceMonitor.recordRequest('groq', fallbackLatency, false);
+
+        const groqMessage = groqError instanceof Error ? groqError.message : String(groqError);
+
         if (sessionId) {
           await this.updateSessionProviderStatus(sessionId, {
-            openrouterErrors: 1,
-            providerSwitchReason: `OpenRouter failed: ${openrouterMessage}`
+            groqErrors: 1,
+            providerSwitchReason: `Groq failed: ${groqMessage}`
           });
         }
 
-        logger.error('Both Gemini and OpenRouter failed:', {
+        logger.error('Both Gemini and Groq failed:', {
           geminiError: error instanceof Error ? error.message : String(error),
-          openrouterError: openrouterMessage
+          groqError: groqMessage
         });
 
-        // Throw a comprehensive error when both providers fail
-        throw new Error(`AI providers unavailable: Gemini (${error instanceof Error ? error.message : 'quota exceeded'}), OpenRouter (${openrouterMessage})`);
+        throw new Error(`AI providers unavailable: Gemini (${error instanceof Error ? error.message : 'quota exceeded'}), Groq (${groqMessage})`);
       }
     }
   }
 
   private async updateSessionProviderStatus(sessionId: string, updates: Partial<{
-    primaryProvider: 'gemini' | 'openrouter';
-    currentProvider: 'gemini' | 'openrouter';
+    primaryProvider: 'gemini' | 'groq';
+    currentProvider: 'gemini' | 'groq';
     fallbackCount: number;
     geminiQuotaExhausted: boolean;
-    openrouterErrors: number;
+    groqErrors: number;
     lastProviderSwitch?: Date;
     providerSwitchReason?: string;
   }>) {
     try {
-      const { ScreeningSession } = await import('../models/ScreeningSession.js');
-      
       const setFields: Record<string, any> = {};
       const incFields: Record<string, any> = {};
       
       Object.entries(updates).forEach(([key, value]) => {
-        if (key === 'fallbackCount' || key === 'openrouterErrors') {
+        if (key === 'fallbackCount' || key === 'groqErrors') {
           incFields[`aiProviderStatus.${key}`] = value;
         } else {
           setFields[`aiProviderStatus.${key}`] = value;
@@ -735,7 +729,7 @@ Return ONLY a valid JSON array - no markdown fences, no extra text:
     totalScore: number;
     perQuestion: Array<{ question: string; score: number; feedback: string }>;
     overallFeedback: string;
-    provider: 'gemini' | 'openrouter';
+    provider: 'gemini' | 'groq';
     model: string;
   }> {
     const cleanedAnswers = answers.map((a) => ({

@@ -27,7 +27,7 @@ The platform follows a three-tier architecture:
                      │                               │            │              │                       │
                      v                               v            v              v                       v
            ┌─────────────────────┐         ┌────────────────┐  ┌────────────┐  ┌────────────────┐  ┌──────────────────┐
-           │ MongoDB             │         │ Gemini API     │  │ OpenRouter │  │ File Parsing   │  │ Umurava API      │
+           │ MongoDB             │         │ Gemini API     │  │ Groq API   │  │ File Parsing   │  │ Umurava API      │
            │ Jobs/Applicants/    │         │ (LLM)          │  │ (Fallback) │  │ CSV/Excel/PDF  │  │ Talent Profiles  │
            │ Results/Notifs      │         └────────────────┘  └────────────┘  └────────────────┘  └──────────────────┘
            └─────────────────────┘

@@ -294,42 +294,30 @@ export class AssessmentController {
       }
 
       logger.info(`Starting bulk AI assessment generation for ${applicantIds.length} applicants [Job: ${jobId}]`);
-      
-      const results = [];
-      let successCount = 0;
-      let errorCount = 0;
 
-      // Use sequential processing (with small delay if needed) to avoid Gemini rate limits
-      for (const applicantId of applicantIds) {
-        try {
+      // Process all applicants concurrently — the geminiRateLimiter (inside generateTechnicalTest)
+      // caps simultaneous Gemini calls so we don't overwhelm the API.
+      const settled = await Promise.allSettled(
+        applicantIds.map(async (applicantId: string) => {
           const applicant = await Applicant.findById(applicantId);
-          if (!applicant) {
-            results.push({ applicantId, status: 'failed', message: 'Applicant not found' });
-            errorCount++;
-            continue;
-          }
+          if (!applicant) throw new Error('Applicant not found');
 
-          // Check if assessment already exists
           let assessment = await Assessment.findOne({ applicantId, jobId });
-          
+
           if (!assessment) {
-            // Generate new assessment using Gemini
             const questions = await geminiService.generateTechnicalTest(job, applicant);
-            if (!questions.length) {
-              throw new Error('AI failed to generate multiple-choice questions');
-            }
+            if (!questions.length) throw new Error('AI failed to generate multiple-choice questions');
+
             const resolvedTalentUserId = await resolveTalentUserIdForApplicant(applicant);
             const timePerQuestionSeconds = 60;
-            const timeLimitSeconds = questions.length * timePerQuestionSeconds;
-            const dueAt = this.getAssessmentDueAt();
             assessment = await Assessment.create({
               jobId,
               applicantId,
               talentUserId: resolvedTalentUserId,
               questions,
               timePerQuestionSeconds,
-              timeLimitSeconds,
-              dueAt,
+              timeLimitSeconds: questions.length * timePerQuestionSeconds,
+              dueAt: this.getAssessmentDueAt(),
               status: 'pending',
             });
           } else if (!assessment.timeLimitSeconds) {
@@ -345,7 +333,6 @@ export class AssessmentController {
             }
           }
 
-          // Mark as sent for high-fidelity bulk action
           await Applicant.findByIdAndUpdate(applicantId, { assessmentStatus: 'sent' });
 
           if (assessment?.talentUserId) {
@@ -358,23 +345,27 @@ export class AssessmentController {
             );
           }
 
-          results.push({ applicantId, status: 'success' });
-          successCount++;
-        } catch (err: any) {
-          logger.error(`Failed to generate assessment for ${applicantId}:`, err);
-          results.push({ applicantId, status: 'failed', message: err.message });
-          errorCount++;
-        }
-      }
+          return applicantId;
+        })
+      );
+
+      const results = settled.map((outcome, i) =>
+        outcome.status === 'fulfilled'
+          ? { applicantId: applicantIds[i], status: 'success' }
+          : { applicantId: applicantIds[i], status: 'failed', message: (outcome.reason as Error)?.message }
+      );
+
+      const successCount = results.filter((r) => r.status === 'success').length;
+      const errorCount = results.length - successCount;
+
+      // Log individual failures without masking the overall success response
+      results.filter((r) => r.status === 'failed').forEach((r) =>
+        logger.error(`Failed to generate assessment for ${r.applicantId}: ${r.message}`)
+      );
 
       return res.status(200).json({
         success: true,
-        data: {
-          total: applicantIds.length,
-          successCount,
-          errorCount,
-          results
-        },
+        data: { total: applicantIds.length, successCount, errorCount, results },
         message: `Processed ${applicantIds.length} assessments (${successCount} successful, ${errorCount} failed)`,
       });
     } catch (error: any) {
