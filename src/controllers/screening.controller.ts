@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { screeningService } from '../services/screening.service';
-import { isOpenRouterConfigured } from '../config/openrouter';
+import { isGroqConfigured } from '../config/groq';
 import { getGeminiModel, performanceMonitor } from '../config/gemini';
 import { config } from '../config/environment';
 import { APIError } from '../middleware/errorHandler';
@@ -40,7 +40,7 @@ export class ScreeningController {
    * 
    * Instead we use:
    *   - Gemini: countTokens('ping') — free, validates API key + connectivity
-   *   - OpenRouter: GET /models — free, validates API key + connectivity
+   *   - Groq: GET /models — free, validates API key + connectivity
    */
   async checkAIProviderHealth(_req: Request, res: Response, _next: NextFunction): Promise<void> {
     const cacheKey = 'ai-provider-health';
@@ -63,41 +63,32 @@ export class ScreeningController {
       const healthStatus = {
         timestamp: new Date().toISOString(),
         gemini: { status: 'unknown', error: null as string | null },
-        openrouter: { status: 'unknown', error: null as string | null },
+        groq:   { status: 'unknown', error: null as string | null },
         overall: 'unknown' as 'healthy' | 'degraded' | 'unhealthy'
       };
 
-      const HEALTH_CHECK_TIMEOUT = 8000; // 8 seconds max for health checks
+      const HEALTH_CHECK_TIMEOUT = 8000;
 
-      // Concurrent ZERO-COST health checking
       await Promise.allSettled([
-        // Gemini health check — uses countTokens (FREE, no generation quota consumed)
+        // Gemini health check — countTokens is FREE
         (async () => {
           try {
-            // First: verify API key is configured
             if (!config.geminiApiKey) {
               healthStatus.gemini.status = 'unhealthy';
               healthStatus.gemini.error = 'API key not configured';
               return;
             }
-
             const geminiModel = getGeminiModel();
-            
-            // countTokens is FREE — it validates API key + connectivity
-            // without consuming any generation quota
             await Promise.race([
               geminiModel.countTokens('ping'),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout after 8s')), HEALTH_CHECK_TIMEOUT))
             ]);
-
             healthStatus.gemini.status = 'healthy';
             healthStatus.gemini.error = null;
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             healthStatus.gemini.status = 'unhealthy';
-            
             if (message.includes('429') || message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
-              // Even quota exceeded on countTokens means the key is valid — mark as degraded not unhealthy
               healthStatus.gemini.status = 'degraded' as any;
               healthStatus.gemini.error = 'Rate limited (API key is valid)';
             } else if (message.includes('timeout') || message.includes('fetch failed') || message.includes('Timeout')) {
@@ -111,59 +102,51 @@ export class ScreeningController {
           }
         })(),
 
-        // OpenRouter health check — uses GET /models (FREE, no generation)
+        // Groq health check — GET /models is FREE
         (async () => {
           try {
-            // First: verify API key is configured
-            if (!isOpenRouterConfigured()) {
-              healthStatus.openrouter.status = 'unhealthy';
-              healthStatus.openrouter.error = 'API key not configured';
+            if (!isGroqConfigured()) {
+              healthStatus.groq.status = 'unhealthy';
+              healthStatus.groq.error = 'API key not configured';
               return;
             }
-
-            // GET /models is a FREE endpoint — validates API key + connectivity
-            // without consuming any chat completion tokens
             const modelsResponse = await Promise.race([
-              axios.get(`${config.openRouterBaseUrl}/models`, {
-                headers: {
-                  'Authorization': `Bearer ${config.openRouterApiKey}`,
-                },
+              axios.get(`${config.groqBaseUrl}/models`, {
+                headers: { 'Authorization': `Bearer ${config.groqApiKey}` },
                 timeout: HEALTH_CHECK_TIMEOUT,
               }),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout after 8s')), HEALTH_CHECK_TIMEOUT))
-            ]) as { status: number; data?: { data?: unknown[] } };
+            ]) as { status: number };
 
             if (modelsResponse.status === 200) {
-              healthStatus.openrouter.status = 'healthy';
-              healthStatus.openrouter.error = null;
+              healthStatus.groq.status = 'healthy';
+              healthStatus.groq.error = null;
             } else {
-              healthStatus.openrouter.status = 'unhealthy';
-              healthStatus.openrouter.error = `Unexpected status: ${modelsResponse.status}`;
+              healthStatus.groq.status = 'unhealthy';
+              healthStatus.groq.error = `Unexpected status: ${modelsResponse.status}`;
             }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
-            healthStatus.openrouter.status = 'unhealthy';
-            
+            healthStatus.groq.status = 'unhealthy';
             if (message.includes('401') || message.includes('403')) {
-              healthStatus.openrouter.error = 'Authentication failed';
+              healthStatus.groq.error = 'Authentication failed';
             } else if (message.includes('timeout') || message.includes('Timeout')) {
-              healthStatus.openrouter.error = 'Network timeout';
+              healthStatus.groq.error = 'Network timeout';
             } else {
-              healthStatus.openrouter.error = 'Connection failed';
+              healthStatus.groq.error = 'Connection failed';
             }
-            logger.warn('OpenRouter health check failed:', message);
+            logger.warn('Groq health check failed:', message);
           }
         })()
       ]);
 
-      // Determine overall health
       const geminiOk = healthStatus.gemini.status === 'healthy';
-      const openrouterOk = healthStatus.openrouter.status === 'healthy';
-      const bothDown = healthStatus.gemini.status === 'unhealthy' && healthStatus.openrouter.status === 'unhealthy';
-      
-      if (geminiOk && openrouterOk) {
+      const groqOk   = healthStatus.groq.status === 'healthy';
+      const bothDown = healthStatus.gemini.status === 'unhealthy' && healthStatus.groq.status === 'unhealthy';
+
+      if (geminiOk && groqOk) {
         healthStatus.overall = 'healthy';
-      } else if (geminiOk || openrouterOk) {
+      } else if (geminiOk || groqOk) {
         healthStatus.overall = 'degraded';
       } else if (bothDown) {
         healthStatus.overall = 'unhealthy';
@@ -199,7 +182,7 @@ export class ScreeningController {
         data: {
           timestamp: new Date().toISOString(),
           gemini: { status: 'unknown', error: 'Health check system error' },
-          openrouter: { status: 'unknown', error: 'Health check system error' },
+          groq:   { status: 'unknown', error: 'Health check system error' },
           overall: 'unhealthy' as const
         },
         error: message,

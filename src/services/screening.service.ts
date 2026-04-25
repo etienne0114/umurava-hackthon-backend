@@ -24,7 +24,11 @@ export interface ScreeningOptions {
 }
 
 export class ScreeningService {
-  private readonly BATCH_SIZE = 5;
+  // Process all applicants in one AI call — avoids multiple API requests
+  // and the TPM exhaustion that comes from many sequential small batches.
+  // Falls back to sub-batches of 10 if the single call fails.
+  private readonly BATCH_SIZE = 10;
+  private readonly MAX_SINGLE_CALL = 50; // send up to 50 at once in one prompt
 
   private async assertAllAssessmentsCompleted(jobId: string): Promise<void> {
     const totalAssessments = await Assessment.countDocuments({ jobId });
@@ -76,15 +80,15 @@ export class ScreeningService {
           topN,
           minScore,
           weights,
-          batchMode: applicants.length >= this.BATCH_SIZE,
-          batchSize: this.BATCH_SIZE,
+          batchMode: applicants.length > this.MAX_SINGLE_CALL,
+          batchSize: applicants.length <= this.MAX_SINGLE_CALL ? applicants.length : this.BATCH_SIZE,
         },
         aiProviderStatus: {
           primaryProvider: 'gemini',
           currentProvider: 'gemini',
           fallbackCount: 0,
           geminiQuotaExhausted: false,
-          openrouterErrors: 0,
+          groqErrors: 0,
         },
       });
 
@@ -112,25 +116,51 @@ export class ScreeningService {
   ): Promise<void> {
     try {
       const evaluations: Array<CandidateEvaluation & { applicantId: string }> = [];
-      const batchSize = this.BATCH_SIZE;
 
-      // Evaluate candidates in small batches for consistency and throughput
-      for (let i = 0; i < applicants.length; i += batchSize) {
-        const batch = applicants.slice(i, i + batchSize);
+      if (applicants.length <= this.MAX_SINGLE_CALL) {
+        // ── Strategy 1: Single AI call for all applicants ──────────────────────
+        // One prompt = one API request = no TPM fragmentation.
+        logger.info(`Screening ${applicants.length} applicants in a single AI call`);
         try {
-          const batchResults = await geminiService.evaluateCandidatesBatch(job, batch, sessionId);
-          batchResults.forEach((result) => {
-            evaluations.push({
-              ...result.evaluation,
-              applicantId: result.applicantId,
-            });
-          });
-        } catch (error: unknown) {
-          logger.error(`Failed to evaluate batch starting at ${i}:`, error);
-        } finally {
+          const results = await geminiService.evaluateCandidatesBatch(job, applicants, sessionId);
+          results.forEach((r) => evaluations.push({ ...r.evaluation, applicantId: r.applicantId }));
           await ScreeningSession.findByIdAndUpdate(sessionId, {
-            $inc: { processedApplicants: batch.length },
+            $inc: { processedApplicants: applicants.length },
           });
+        } catch (singleCallError: unknown) {
+          const msg = singleCallError instanceof Error ? singleCallError.message : String(singleCallError);
+          logger.warn(`Single-call evaluation failed (${msg}), falling back to sub-batches of ${this.BATCH_SIZE}`);
+
+          // ── Strategy 2: Sub-batches of BATCH_SIZE ──────────────────────────
+          for (let i = 0; i < applicants.length; i += this.BATCH_SIZE) {
+            const batch = applicants.slice(i, i + this.BATCH_SIZE);
+            try {
+              const batchResults = await geminiService.evaluateCandidatesBatch(job, batch, sessionId);
+              batchResults.forEach((r) => evaluations.push({ ...r.evaluation, applicantId: r.applicantId }));
+            } catch (batchError: unknown) {
+              logger.error(`Failed to evaluate sub-batch starting at ${i}:`, batchError);
+            } finally {
+              await ScreeningSession.findByIdAndUpdate(sessionId, {
+                $inc: { processedApplicants: batch.length },
+              });
+            }
+          }
+        }
+      } else {
+        // ── Strategy 3: Large pool — sub-batches of BATCH_SIZE ─────────────────
+        logger.info(`Screening ${applicants.length} applicants in sub-batches of ${this.BATCH_SIZE}`);
+        for (let i = 0; i < applicants.length; i += this.BATCH_SIZE) {
+          const batch = applicants.slice(i, i + this.BATCH_SIZE);
+          try {
+            const batchResults = await geminiService.evaluateCandidatesBatch(job, batch, sessionId);
+            batchResults.forEach((r) => evaluations.push({ ...r.evaluation, applicantId: r.applicantId }));
+          } catch (error: unknown) {
+            logger.error(`Failed to evaluate batch starting at ${i}:`, error);
+          } finally {
+            await ScreeningSession.findByIdAndUpdate(sessionId, {
+              $inc: { processedApplicants: batch.length },
+            });
+          }
         }
       }
 
@@ -222,7 +252,7 @@ export class ScreeningService {
     return sorted.slice(0, topN);
   }
 
-  async getScreeningResults(jobId: string, limit: number = 20): Promise<IScreeningResult[]> {
+  async getScreeningResults(jobId: string, limit: number = 500): Promise<IScreeningResult[]> {
     try {
       // Find the latest completed session for this job to avoid mixing duplicates
       const latestSession = await ScreeningSession.findOne({ 

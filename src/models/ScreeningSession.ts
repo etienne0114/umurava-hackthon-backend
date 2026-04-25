@@ -14,11 +14,11 @@ export interface IScreeningSession extends Document {
     batchSize?: number;
   };
   aiProviderStatus: {
-    primaryProvider: 'gemini' | 'openrouter';
-    currentProvider: 'gemini' | 'openrouter';
+    primaryProvider: 'gemini' | 'groq';
+    currentProvider: 'gemini' | 'groq';
     fallbackCount: number;
     geminiQuotaExhausted: boolean;
-    openrouterErrors: number;
+    groqErrors: number;
     lastProviderSwitch?: Date;
     providerSwitchReason?: string;
   };
@@ -81,12 +81,12 @@ const ScreeningSessionSchema = new Schema<IScreeningSession>({
   aiProviderStatus: {
     primaryProvider: {
       type: String,
-      enum: ['gemini', 'openrouter'],
+      enum: ['gemini', 'groq'],
       default: 'gemini',
     },
     currentProvider: {
       type: String,
-      enum: ['gemini', 'openrouter'],
+      enum: ['gemini', 'groq'],
       default: 'gemini',
     },
     fallbackCount: {
@@ -97,7 +97,7 @@ const ScreeningSessionSchema = new Schema<IScreeningSession>({
       type: Boolean,
       default: false,
     },
-    openrouterErrors: {
+    groqErrors: {
       type: Number,
       default: 0,
     },
