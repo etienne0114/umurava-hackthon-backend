@@ -180,6 +180,25 @@ export class ApplicantController {
     }
   }
 
+  async deleteApplicantsByJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jobId } = req.params;
+      if (!jobId) {
+        res.status(400).json({ success: false, message: 'Job ID is required' });
+        return;
+      }
+      const deletedCount = await applicantService.deleteApplicantsByJob(jobId);
+      res.json({
+        success: true,
+        message: `Cleared ${deletedCount} applicant${deletedCount !== 1 ? 's' : ''} successfully`,
+        data: { deletedCount },
+        meta: { timestamp: new Date().toISOString() },
+      });
+    } catch (error: unknown) {
+      next(error);
+    }
+  }
+
   async updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { applicantId } = req.params;

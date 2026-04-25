@@ -250,10 +250,18 @@ export const retryWithBackoff = async <T>(
     } catch (error) {
       lastError = error as Error;
 
-      // Never retry quota/not-found errors — they won't resolve in seconds
-      const noRetry = lastError.message.includes('429') || lastError.message.includes('404')
-        || lastError.message.includes('Too Many Requests') || lastError.message.includes('Not Found')
-        || lastError.message.includes('RESOURCE_EXHAUSTED');
+      // Never retry errors that won't resolve in seconds:
+      // - Quota/rate-limit errors (Gemini)
+      // - "Both providers failed" — retrying re-runs the whole Gemini→Groq chain, which
+      //   will fail again immediately and multiplies the groqErrors counter needlessly
+      // - Circuit-breaker open — Groq is temporarily disabled, retrying won't help
+      const noRetry = lastError.message.includes('429')
+        || lastError.message.includes('404')
+        || lastError.message.includes('Too Many Requests')
+        || lastError.message.includes('Not Found')
+        || lastError.message.includes('RESOURCE_EXHAUSTED')
+        || lastError.message.includes('AI providers unavailable')
+        || lastError.message.includes('circuit breaker');
       if (noRetry) throw lastError;
 
       if (attempt < maxRetries) {
