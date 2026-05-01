@@ -156,8 +156,16 @@ const startServer = async (): Promise<void> => {
   }
 };
 
-// Only start server if not in test mode
-if (process.env.NODE_ENV !== 'test') {
+// Initialize database connection for serverless (Vercel)
+// This runs once when the serverless function cold starts
+if (process.env.VERCEL) {
+  connectDatabase().catch((error) => {
+    logger.error('Failed to connect to database:', error);
+  });
+}
+
+// Only start server if not in test mode and not in Vercel
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   startServer();
 }
 
