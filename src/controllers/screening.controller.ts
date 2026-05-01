@@ -289,7 +289,11 @@ export class ScreeningController {
       const { jobId } = req.params;
       const limit = parseInt(req.query.limit as string) || 20;
 
+      logger.info(`Fetching screening results for job ${jobId}, limit: ${limit}`);
+
       const results = await screeningService.getScreeningResults(jobId, limit);
+
+      logger.info(`Returning ${results.length} screening results for job ${jobId}`);
 
       res.json({
         success: true,
@@ -300,6 +304,7 @@ export class ScreeningController {
         },
       });
     } catch (error: unknown) {
+      logger.error('Error in getScreeningResults controller:', error);
       next(error);
     }
   }

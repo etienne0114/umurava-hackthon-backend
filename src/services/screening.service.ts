@@ -260,13 +260,26 @@ export class ScreeningService {
         status: 'completed' 
       }).sort({ createdAt: -1 });
 
-      const query = latestSession ? { jobId, sessionId: latestSession._id } : { jobId };
+      if (!latestSession) {
+        logger.info(`No completed screening session found for job ${jobId}`);
+        return [];
+      }
+
+      const query = { jobId, sessionId: latestSession._id };
 
       const results = await ScreeningResult.find(query)
         .sort({ rank: 1 }) // Primary sort by rank
         .limit(limit)
-        .populate('applicantId');
+        .populate({
+          path: 'applicantId',
+          select: '_id profile source status assessmentStatus'
+        });
       
+      if (results.length === 0) {
+        logger.warn(`No screening results found for job ${jobId}, session ${latestSession._id}`);
+        return [];
+      }
+
       // Validate ranking integrity and fix if needed
       const hasRankingIssues = this.validateAndFixRanking(results);
       if (hasRankingIssues) {
@@ -277,13 +290,16 @@ export class ScreeningService {
         const fixedResults = await ScreeningResult.find(query)
           .sort({ rank: 1 })
           .limit(limit)
-          .populate('applicantId');
+          .populate({
+            path: 'applicantId',
+            select: '_id profile source status assessmentStatus'
+          });
         
         logger.info(`Retrieved ${fixedResults.length} screening results for job ${jobId} (after ranking fix). Top scores: ${fixedResults.slice(0, 3).map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
         return fixedResults;
       }
       
-      logger.debug(`Retrieved ${results.length} screening results for job ${jobId}. Top scores: ${results.slice(0, 3).map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
+      logger.info(`Retrieved ${results.length} screening results for job ${jobId}. Top scores: ${results.slice(0, 3).map(r => `Rank ${r.rank}: ${r.matchScore}%`).join(', ')}`);
       
       return results;
     } catch (error: unknown) {
