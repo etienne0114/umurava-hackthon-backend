@@ -1,37 +1,41 @@
-// Vercel serverless function entry point
-require('dotenv').config();
+// Root-level Vercel serverless function for backend deployment
+// This is the entry point that Vercel will find and execute
 
+// Set VERCEL environment variable
 process.env.VERCEL = '1';
 
+// Import the compiled Express app
 let app;
 try {
+  // Load from dist (same directory level as api/)
   app = require('../dist/server.js').default;
+  console.log('[Vercel] Successfully loaded Express app from dist/server.js');
 } catch (error) {
-  console.error('Failed to load Express app:', error);
-  throw error;
+  console.error('[Vercel] Failed to load Express app:', error.message);
+  console.error('[Vercel] Error stack:', error.stack);
+  
+  // Return a helpful error response
+  module.exports = (req, res) => {
+    res.status(500).json({
+      error: 'Failed to load backend application',
+      message: error.message,
+      hint: 'Check Vercel build logs for compilation errors'
+    });
+  };
+  return;
 }
 
+// Verify app is valid
 if (!app || typeof app !== 'function') {
-  throw new Error('Invalid Express app export from dist/server.js');
+  console.error('[Vercel] Invalid Express app export');
+  module.exports = (req, res) => {
+    res.status(500).json({
+      error: 'Invalid Express application',
+      hint: 'The dist/server.js must export an Express app as default'
+    });
+  };
+} else {
+  // Export the Express app for Vercel
+  module.exports = app;
+  console.log('[Vercel] Express app exported successfully');
 }
-
-// Lazy DB connection: ensure Mongoose is connected before processing each request.
-// Vercel serverless containers can be reused (warm) or recycled (cold start).
-// On cold start the module-level connectDatabase() in server.js fires, but it is
-// async — it may not have resolved before the first request arrives.  This wrapper
-// guarantees the connection is established (or throws a 503) before Express sees
-// the request.
-const { connectDatabase } = require('../dist/config/database.js');
-
-const handler = async (req, res) => {
-  try {
-    await connectDatabase();
-  } catch (err) {
-    console.error('DB connection failed on request:', err);
-    res.status(503).json({ error: 'Service temporarily unavailable. Please retry.' });
-    return;
-  }
-  app(req, res);
-};
-
-module.exports = handler;
