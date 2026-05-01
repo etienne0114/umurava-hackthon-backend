@@ -2,33 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
-      "use": "@vercel/node",
-      "config": {
-        "memory": 1024,
-        "maxDuration": 60
-      }
+      "src": "dist/server.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/uploads/(.*)",
-      "dest": "/dist/server.js"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/dist/server.js"
-    },
-    {
-      "src": "/uploads/(.*)",
-      "dest": "/dist/server.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/dist/server.js"
+      "dest": "dist/server.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
