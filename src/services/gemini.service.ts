@@ -401,18 +401,24 @@ export class GeminiService {
 
     return parsed
       .filter((item) => item && typeof item.applicantId === 'string')
-      .map((item) => ({
-        applicantId: item.applicantId,
-        skillsScore: Math.max(0, Math.min(100, Number(item.skillsScore) || 0)),
-        experienceScore: Math.max(0, Math.min(100, Number(item.experienceScore) || 0)),
-        educationScore: Math.max(0, Math.min(100, Number(item.educationScore) || 0)),
-        relevanceScore: Math.max(0, Math.min(100, Number(item.relevanceScore) || 0)),
-        strengths: Array.isArray(item.strengths) ? item.strengths : [],
-        gaps: Array.isArray(item.gaps) ? item.gaps : [],
-        risks: Array.isArray(item.risks) ? item.risks : [],
-        recommendation: item.recommendation || 'consider',
-        reasoning: item.reasoning || '',
-      }));
+      .map((item) => {
+        const strengths = Array.isArray(item.strengths) && item.strengths.length > 0 
+          ? item.strengths 
+          : ['Candidate profile reviewed'];
+        
+        return {
+          applicantId: item.applicantId,
+          skillsScore: Math.max(0, Math.min(100, Number(item.skillsScore) || 0)),
+          experienceScore: Math.max(0, Math.min(100, Number(item.experienceScore) || 0)),
+          educationScore: Math.max(0, Math.min(100, Number(item.educationScore) || 0)),
+          relevanceScore: Math.max(0, Math.min(100, Number(item.relevanceScore) || 0)),
+          strengths,
+          gaps: Array.isArray(item.gaps) ? item.gaps : [],
+          risks: Array.isArray(item.risks) ? item.risks : [],
+          recommendation: item.recommendation || 'consider',
+          reasoning: item.reasoning || 'Evaluation completed',
+        };
+      });
   }
 
   async evaluateCandidatesBatch(

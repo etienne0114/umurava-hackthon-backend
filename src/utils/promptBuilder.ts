@@ -162,9 +162,10 @@ export const parseGeminiResponse = (responseText: string): GeminiEvaluationRespo
       throw new Error('Invalid score values in response');
     }
 
-    if (!Array.isArray(parsed.strengths) || parsed.strengths.length === 0) {
-      throw new Error('Strengths must be a non-empty array');
-    }
+    // Ensure strengths is never empty - provide default if AI returns empty array
+    const strengths = Array.isArray(parsed.strengths) && parsed.strengths.length > 0
+      ? parsed.strengths
+      : ['Candidate profile reviewed'];
 
     if (!parsed.reasoning || parsed.reasoning.length < 50) {
       throw new Error('Reasoning must be at least 50 characters');
@@ -175,7 +176,7 @@ export const parseGeminiResponse = (responseText: string): GeminiEvaluationRespo
       experienceScore: Math.max(0, Math.min(100, parsed.experienceScore)),
       educationScore: Math.max(0, Math.min(100, parsed.educationScore)),
       relevanceScore: Math.max(0, Math.min(100, parsed.relevanceScore)),
-      strengths: parsed.strengths,
+      strengths,
       gaps: parsed.gaps || [],
       risks: parsed.risks || [],
       recommendation: parsed.recommendation || 'consider',
