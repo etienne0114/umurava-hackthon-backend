@@ -2,28 +2,42 @@ import mongoose from 'mongoose';
 import logger from '../utils/logger';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment-platform';
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 5000;
 
-let retryCount = 0;
+// Cached connection for serverless reuse across warm invocations
+interface MongooseCache {
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
+}
 
-const connectWithRetry = async (): Promise<void> => {
+// In serverless, module-level variables persist across warm invocations within the same container
+const cache: MongooseCache = { conn: null, promise: null };
+
+export const connectDatabase = async (): Promise<void> => {
+  // Already connected — reuse the existing connection
+  if (cache.conn && mongoose.connection.readyState === 1) {
+    return;
+  }
+
+  // Connection in flight — wait for it rather than opening a second one
+  if (!cache.promise) {
+    const opts = {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: process.env.VERCEL ? 1 : 10, // Keep pool small in serverless
+    };
+
+    cache.promise = mongoose.connect(MONGODB_URI, opts);
+  }
+
   try {
-    await mongoose.connect(MONGODB_URI);
+    cache.conn = await cache.promise;
     logger.info('MongoDB connected successfully');
-    retryCount = 0;
   } catch (error) {
-    retryCount++;
-    logger.error(`MongoDB connection failed (attempt ${retryCount}/${MAX_RETRIES}):`, error);
-
-    if (retryCount < MAX_RETRIES) {
-      const delay = RETRY_DELAY_MS * Math.pow(2, retryCount - 1);
-      logger.info(`Retrying connection in ${delay}ms...`);
-      setTimeout(connectWithRetry, delay);
-    } else {
-      logger.error('Max retry attempts reached. Exiting...');
-      process.exit(1);
-    }
+    // Reset so the next request can try again
+    cache.promise = null;
+    cache.conn = null;
+    logger.error('MongoDB connection failed:', error);
+    throw error; // Let the caller handle it; never call process.exit in serverless
   }
 };
 
@@ -33,16 +47,21 @@ mongoose.connection.on('connected', () => {
 
 mongoose.connection.on('error', (err) => {
   logger.error('Mongoose connection error:', err);
+  cache.conn = null;
+  cache.promise = null;
 });
 
 mongoose.connection.on('disconnected', () => {
   logger.warn('Mongoose disconnected from MongoDB');
+  cache.conn = null;
+  cache.promise = null;
 });
 
-process.on('SIGINT', async () => {
-  await mongoose.connection.close();
-  logger.info('MongoDB connection closed due to app termination');
-  process.exit(0);
-});
-
-export const connectDatabase = connectWithRetry;
+// Only register SIGINT handler in non-serverless environments
+if (!process.env.VERCEL) {
+  process.on('SIGINT', async () => {
+    await mongoose.connection.close();
+    logger.info('MongoDB connection closed due to app termination');
+    process.exit(0);
+  });
+}

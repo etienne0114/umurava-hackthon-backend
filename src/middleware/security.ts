@@ -52,14 +52,32 @@ export const securityHeaders = helmet({
   },
 });
 
+const isOriginAllowed = (origin: string, allowedOrigins: string[]): boolean => {
+  return allowedOrigins.some(pattern => {
+    if (pattern === '*') return true;
+    if (pattern === origin) return true;
+    // Support wildcard subdomains e.g. https://*.vercel.app
+    if (pattern.includes('*')) {
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]+');
+      return new RegExp(`^${escaped}$`).test(origin);
+    }
+    return false;
+  });
+};
+
 /**
  * CORS configuration with origin whitelist
  */
 export const getCorsOptions = () => {
   // Parse allowed origins from environment variable
+  // Falls back to a set that includes both localhost and all *.vercel.app in production
+  const defaultOrigins = process.env.NODE_ENV === 'production'
+    ? ['http://localhost:3000', 'http://localhost:3001', 'https://*.vercel.app']
+    : ['http://localhost:3000', 'http://localhost:3001'];
+
   const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
     ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-    : ['http://localhost:3000', 'http://localhost:3001'];
+    : defaultOrigins;
 
   return {
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -68,7 +86,7 @@ export const getCorsOptions = () => {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      if (isOriginAllowed(origin, allowedOrigins)) {
         callback(null, true);
       } else {
         console.warn(`CORS blocked request from origin: ${origin}`);
@@ -168,14 +186,14 @@ export const trackRequests = (req: Request, _res: Response, next: NextFunction):
   next();
 };
 
-/**
- * Clean up old tracking data periodically
- */
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, tracker] of requestTracker.entries()) {
-    if (now - tracker.firstRequest > 3600000) {
-      requestTracker.delete(ip);
+// Only run cleanup timer in long-lived server processes, not in serverless
+if (!process.env.VERCEL) {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, tracker] of requestTracker.entries()) {
+      if (now - tracker.firstRequest > 3600000) {
+        requestTracker.delete(ip);
+      }
     }
-  }
-}, 600000); // Clean up every 10 minutes
+  }, 600000); // Clean up every 10 minutes
+}
